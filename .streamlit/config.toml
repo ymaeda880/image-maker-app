@@ -17,5 +17,5 @@ headless = true
 # [server]
 # port = 8503
 # address = "0.0.0.0"
-# baseUrlPath = "/doc-manager"
+# baseUrlPath = "/image-maker"
 # headless = true
