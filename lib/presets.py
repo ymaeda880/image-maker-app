@@ -13,6 +13,7 @@ STYLE_PRESETS: Dict[str, str] = {
     "🌌 未来都市": "近未来的な都市、ネオンライト、サイバーパンク風の雰囲気（futuristic city, neon lights, cyberpunk style, ultra-detailed）",
     "🌿 自然・風景": "緑豊かな森、木漏れ日、自然光が差し込むリアルな風景（lush forest, sunlight filtering through trees, vivid colors, realistic lighting）",
     "👩‍💻 AIイラスト風人物": "アニメ風の人物イラスト、繊細な線画と柔らかい光（anime style portrait, highly detailed, soft light, digital art, pastel colors）",
+    "写真風":"プロのカメラマンが一眼レフカメラで撮ったような，素晴らしい写真"
 }
 
 def _user_presets_path() -> Path:
