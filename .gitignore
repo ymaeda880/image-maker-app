@@ -21,3 +21,6 @@ data/*.zip
 data/raw/*
 data/
 
+# ログ
+logs/
+
