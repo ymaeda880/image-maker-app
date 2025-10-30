@@ -1,4 +1,4 @@
-2025-10-25 09:29:38.936 
+2025-10-30 11:04:03.444 
 Warning: the config option 'server.enableCORS=false' is not compatible with
 'server.enableXsrfProtection=true'.
 As a result, 'server.enableCORS' is being overridden to 'true'.
@@ -20,10 +20,3 @@ If cross origin resource sharing is required, please disable server.enableXsrfPr
   $ xcode-select --install
   $ pip install watchdog
             
-/Users/macmini2025/projects/image_maker_project/image_maker_app/pages/99_画像ログ集計.py:249: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
-  .groupby(["user", "month"])
-/Users/macmini2025/projects/image_maker_project/image_maker_app/pages/99_画像ログ集計.py:260: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
-  .groupby(["user", "month"])
-/Users/macmini2025/projects/image_maker_project/image_maker_app/pages/99_画像ログ集計.py:260: FutureWarning: The default of observed=False is deprecated and will be changed to True in a future version of pandas. Pass observed=False to retain current behavior or observed=True to adopt the future default and silence this warning.
-  .groupby(["user", "month"])
-  Stopping...
