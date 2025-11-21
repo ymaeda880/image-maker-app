@@ -31,7 +31,7 @@ st.set_page_config(page_title="画像アップロード→修正", page_icon="�
 # ヘッダー：タイトル + ログインバッジ
 left, right = st.columns([5, 2], vertical_alignment="center")
 with left:
-    st.title("🧪 アップロード画像を修正（gpt-image-1）")
+    st.title("🧪 アップロード画像を修正")
 with right:
     user, _payload = get_current_user_from_session_or_cookie(st)
     if user:

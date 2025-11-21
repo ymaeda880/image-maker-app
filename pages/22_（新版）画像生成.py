@@ -50,7 +50,7 @@ st.set_page_config(page_title="画像生成＋修正", page_icon="🧪", layout=
 col_title, col_user = st.columns([5, 2], vertical_alignment="center")
 
 with col_title:
-    st.title("🧪 画像生成＋修正（gpt-image-1）")
+    st.title("🧪 画像生成")
 
 with col_user:
     user, _payload = get_current_user_from_session_or_cookie(st)
@@ -85,7 +85,7 @@ INCLUDE_FULL_PROMPT_IN_LOG = True
 prompt = st.text_area("生成プロンプト", height=100)
 size = st.selectbox("サイズ", ["1024x1024", "1024x1536", "1536x1024"], index=0)
 
-if st.button("生成する", width="stretch"):
+if st.button("生成する", type="primary",width="stretch"):
     if not prompt.strip():
         st.warning("プロンプトを入力してください。")
         st.stop()
@@ -137,7 +137,7 @@ st.image(st.session_state["simple_last_png"], caption="現在の元画像", widt
 edit_prompt = st.text_area("修正内容を入力", value="背景を夕焼けに、全体をシネマティックに", height=100)
 edit_size = st.selectbox("修正後のサイズ", ["1024x1024", "1024x1536", "1536x1024"], index=0)
 
-if st.button("修正版を生成する（修正内容のプロンプトを反映します．修正のプロンプトを入力してからクリックしてください．）", width="stretch"):
+if st.button("修正版を生成する（修正内容のプロンプトを反映します．修正のプロンプトを入力してからクリックしてください．）", type="primary", width="stretch"):
     if not edit_prompt.strip():
         st.warning("修正内容を入力してください。")
         st.stop()

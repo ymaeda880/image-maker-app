@@ -97,7 +97,7 @@ current_user = payload.get("sub") or "(unknown)"
 # 右上にユーザー名を出す軽いヘッダーバー
 h1, h2 = st.columns([4, 1])
 with h1:
-    st.title("🎨 image_maker_app")
+    st.title("🎨 画像生成アプリ")
 with h2:
     st.caption("ログイン中ユーザー")
     st.success(f"**{current_user}**")
@@ -112,7 +112,7 @@ st.markdown("""
 
 
 st.markdown("""
-このアプリでは、**プロンプト**を入力して OpenAI GPT-image-1Images API（DALL·E 3の改良版）で画像を生成できます。
+このアプリでは、**プロンプト**を入力して OpenAI GPT-image-1（DALL·E 3の改良版）で画像を生成できます。
 左の「サイドバー」から **『画像生成』** を開いてください。
 """)
 
