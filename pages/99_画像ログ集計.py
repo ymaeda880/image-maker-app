@@ -97,8 +97,24 @@ def load_logs(path: Path) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     if "ts" in df.columns:
-        ts = pd.to_datetime(df["ts"], utc=True, errors="coerce")
-        df["ts"] = ts.dt.tz_convert("Asia/Tokyo")
+        # 注意: 文字列が +09:00 を含む場合もあるので utc=True 前提だと NaT になり得る。
+        # ここは「UTC扱い」より「そのままパース→Asia/Tokyoへ寄せる」方が安全な場合があります。
+        ts = pd.to_datetime(df["ts"], errors="coerce")
+        try:
+            # tz が無い/混在しても一旦 UTC として扱える場合のみ
+            if getattr(ts.dt, "tz", None) is None:
+                ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
+        except Exception:
+            pass
+
+        # 最終的に Tokyo に寄せる
+        try:
+            ts = ts.dt.tz_convert("Asia/Tokyo")
+        except Exception:
+            # tz-naive の場合
+            ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
+
+        df["ts"] = ts
         df["date"] = df["ts"].dt.date
         df["month"] = df["ts"].dt.strftime("%Y-%m")
     else:
@@ -108,6 +124,19 @@ def load_logs(path: Path) -> pd.DataFrame:
 
     df["user"] = df.get("user", "(anonymous)").fillna("(anonymous)")
     return df
+
+
+# ============================================================
+# サイドバー：ログ再読込ボタン（★ 追加 ★）
+# ============================================================
+with st.sidebar:
+    st.header("ログ")
+    st.caption("ログが更新されても画面に反映されないときは、ここで再読込してください。")
+
+    if st.button("🔄 ログを読み直す", use_container_width=True):
+        # cache_data の全キャッシュを落として、即 rerun
+        st.cache_data.clear()
+        st.rerun()
 
 
 df = load_logs(LOG_FILE)
@@ -382,7 +411,15 @@ if sel_months:
                     if ts:
                         try:
                             # ts から JST で YYYY-MM を算出
-                            month = pd.to_datetime(ts, utc=True, errors="coerce").tz_convert("Asia/Tokyo").strftime("%Y-%m")
+                            month = pd.to_datetime(ts, errors="coerce")
+                            if month is not pd.NaT:
+                                if getattr(month, "tzinfo", None) is None:
+                                    month = month.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
+                                else:
+                                    month = month.tz_convert("Asia/Tokyo")
+                                month = month.strftime("%Y-%m")
+                            else:
+                                month = None
                         except Exception:
                             month = None
 

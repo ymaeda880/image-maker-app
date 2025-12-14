@@ -27,7 +27,7 @@ import streamlit as st
 import extra_streamlit_components as stx
 
 # このファイルの場所: /Users/macmini2025/projects/image_maker_project/image_maker_app/app.py
-# → 3つ上に /Users/macmini2025/projects がある
+# → 2つ上に /Users/macmini2025/projects がある
 PROJECTS_DIR = Path(__file__).resolve().parents[2]  # /Users/macmini2025/projects
 
 # 念のため存在確認
@@ -51,6 +51,29 @@ from common_lib.auth.jwt_utils import verify_jwt  # issue は不要（ここは�
 
 # ========== ページ基本設定 ==========
 st.set_page_config(page_title="image_maker_app", page_icon="🎨", layout="wide")
+
+st.title("🖼️ Image Maker — 画像生成と修正のためのAI Creative Studio")
+st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+
+st.markdown(
+    """
+    左サイドバーのメニューから、利用したい機能を選択してください。  
+    まずは **画像生成** ページからお試しください。
+    """
+)
+
+st.markdown("""
+## 🚧 このアプリケーションは現在 **開発中** です
+
+本アプリケーションシステム **Image Maker** は、皆様の業務効率を高めることを目的として、継続的に改良を進めています。
+実際にご利用いただき、**気づいた点・改善してほしい点・不具合** などについて、ぜひフィードバックをお寄せください。
+
+いただいたご意見をもとにプログラムの改善を行い、より使いやすく、業務に役立つツールへと発展させてまいります。
+
+また、画像修正に使うプロンプトのテンプレートなども今後整備していく予定です。「こんなプロンプトが欲しい」「こういう使い方がしたい」などのご提案も大歓迎です。
+
+ご協力のほど、どうぞよろしくお願いいたします。
+""")
 
 # -----------------------------------------------------------------------------
 # Cookie ヘルパ

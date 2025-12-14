@@ -7,9 +7,10 @@
 
 from __future__ import annotations
 
-# ---- ここに追加 ----
+# ---- パス設定（共通ライブラリ読み込みのため）----
 import sys
 from pathlib import Path
+
 _THIS = Path(__file__).resolve()
 APP_DIR = _THIS.parents[1]
 PROJ_DIR = _THIS.parents[2]
@@ -17,8 +18,9 @@ MONO_ROOT = _THIS.parents[3]
 for p in (MONO_ROOT, PROJ_DIR, APP_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
-# ---------------------
 
+PAGE_NAME = _THIS.stem  # ← ファイル名ベースのページ名
+# ------------------------------------------------------------
 
 from io import BytesIO
 import base64, tempfile
@@ -27,7 +29,6 @@ import streamlit as st
 from PIL import Image
 from openai import OpenAI
 
-from pathlib import Path
 import datetime as dt
 
 # ---- 共通ライブラリの読み込み ----
@@ -50,7 +51,7 @@ st.set_page_config(page_title="画像生成＋修正", page_icon="🧪", layout=
 col_title, col_user = st.columns([5, 2], vertical_alignment="center")
 
 with col_title:
-    st.title("🧪 画像生成")
+    st.title("🎨🖌️ 画像生成")
 
 with col_user:
     user, _payload = get_current_user_from_session_or_cookie(st)
@@ -63,11 +64,10 @@ with col_user:
 # 環境初期化
 # ============================================================
 client: OpenAI = get_client()
-st.session_state.setdefault("simple_last_png", b"")
 
-# アプリ／ページ情報
-APP_DIR = Path(__file__).resolve().parents[1]
-PAGE_NAME = Path(__file__).stem
+# ★ ページ専用のセッションキー（他ページと衝突しないようにする）
+SESSION_KEY_LAST = f"{PAGE_NAME}_simple_last_png"
+st.session_state.setdefault(SESSION_KEY_LAST, b"")
 
 # ★ 共通ロガー（出力: APP_DIR/logs/{APP_DIR.name}.log）
 logger = JsonlLogger(app_dir=APP_DIR, page_name=PAGE_NAME)
@@ -85,13 +85,18 @@ INCLUDE_FULL_PROMPT_IN_LOG = True
 prompt = st.text_area("生成プロンプト", height=100)
 size = st.selectbox("サイズ", ["1024x1024", "1024x1536", "1536x1024"], index=0)
 
-if st.button("生成する", type="primary",width="stretch"):
+if st.button("生成する", type="primary", width="stretch"):
     if not prompt.strip():
         st.warning("プロンプトを入力してください。")
         st.stop()
 
     with st.spinner("画像を生成中…"):
-        res = client.images.generate(model="gpt-image-1", prompt=prompt.strip(), n=1, size=size)
+        res = client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt.strip(),
+            n=1,
+            size=size,
+        )
     d = res.data[0]
 
     # バイナリ変換
@@ -101,10 +106,11 @@ if st.button("生成する", type="primary",width="stretch"):
     elif getattr(d, "url", None):
         png_bytes = url_to_png_bytes(d.url)
     else:
-        st.error("画像が返ってきませんでした。"); st.stop()
+        st.error("画像が返ってきませんでした。")
+        st.stop()
 
-    # 状態保存
-    st.session_state["simple_last_png"] = png_bytes
+    # 状態保存（★ ページ専用キーを使用）
+    st.session_state[SESSION_KEY_LAST] = png_bytes
 
     # ===== ログ記録（生成） =====
     current_user = user or "(anonymous)"
@@ -128,23 +134,39 @@ if st.button("生成する", type="primary",width="stretch"):
 # ============================================================
 st.divider()
 
-if not st.session_state.get("simple_last_png"):
+if not st.session_state.get(SESSION_KEY_LAST):
     st.stop()
 
 st.subheader("現在の処理対象画像（修正元になる画像）")
-st.image(st.session_state["simple_last_png"], caption="現在の元画像", width="stretch")
+st.image(
+    st.session_state[SESSION_KEY_LAST],
+    caption="現在の元画像",
+    width="stretch",
+)
 
-edit_prompt = st.text_area("修正内容を入力", value="背景を夕焼けに、全体をシネマティックに", height=100)
-edit_size = st.selectbox("修正後のサイズ", ["1024x1024", "1024x1536", "1536x1024"], index=0)
+edit_prompt = st.text_area(
+    "修正内容を入力",
+    value="背景を夕焼けに、全体をシネマティックに",
+    height=100,
+)
+edit_size = st.selectbox(
+    "修正後のサイズ",
+    ["1024x1024", "1024x1536", "1536x1024"],
+    index=0,
+)
 
-if st.button("修正版を生成する（修正内容のプロンプトを反映します．修正のプロンプトを入力してからクリックしてください．）", type="primary", width="stretch"):
+if st.button(
+    "修正版を生成する（修正内容のプロンプトを反映します．修正のプロンプトを入力してからクリックしてください．）",
+    type="primary",
+    width="stretch",
+):
     if not edit_prompt.strip():
         st.warning("修正内容を入力してください。")
         st.stop()
 
     with st.spinner("修正版を生成中..."):
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            tmp.write(st.session_state["simple_last_png"])
+            tmp.write(st.session_state[SESSION_KEY_LAST])
             tmp.seek(0)
             res2 = client.images.edit(
                 model="gpt-image-1",
@@ -160,10 +182,11 @@ if st.button("修正版を生成する（修正内容のプロンプトを反映
         elif getattr(datum, "url", None):
             out_bytes = url_to_png_bytes(datum.url)
         else:
-            st.error("修正結果がありません。"); st.stop()
+            st.error("修正結果がありません。")
+            st.stop()
 
         # 🔁 修正版を再び元画像に昇格（連続修正OK）
-        st.session_state["simple_last_png"] = out_bytes
+        st.session_state[SESSION_KEY_LAST] = out_bytes
 
         # ===== ログ記録（修正） =====
         current_user = user or "(anonymous)"
@@ -189,7 +212,7 @@ if st.button("修正版を生成する（修正内容のプロンプトを反映
 st.divider()
 st.subheader("💾 生成画像の保存")
 
-png_bytes = st.session_state.get("simple_last_png", b"")
+png_bytes = st.session_state.get(SESSION_KEY_LAST, b"")
 
 if png_bytes:
     # サムネイル表示

@@ -7,6 +7,25 @@
 # ============================================================
 
 from __future__ import annotations
+
+# ==== ここから追加（22ページと同じパス設定）====
+import sys
+from pathlib import Path
+
+_THIS = Path(__file__).resolve()
+APP_DIR = _THIS.parents[1]
+PROJ_DIR = _THIS.parents[2]
+MONO_ROOT = _THIS.parents[3]
+
+for p in (MONO_ROOT, PROJ_DIR, APP_DIR):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+PAGE_NAME = _THIS.stem
+# ==== ここまで追加 ====
+
+
+
 from io import BytesIO
 import base64, tempfile
 from typing import Dict, Any
@@ -31,7 +50,7 @@ st.set_page_config(page_title="画像アップロード→修正", page_icon="�
 # ヘッダー：タイトル + ログインバッジ
 left, right = st.columns([5, 2], vertical_alignment="center")
 with left:
-    st.title("🧪 アップロード画像を修正")
+    st.title("✏️🖼️ 画像修正")
 with right:
     user, _payload = get_current_user_from_session_or_cookie(st)
     if user:
@@ -40,17 +59,19 @@ with right:
         st.warning("未ログイン（Cookie 未検出）")
 
 # --------------------- ロガー初期化（logs/{app_name}.log.jsonl） ---------------------
-APP_DIR = Path(__file__).resolve().parents[1]
-PAGE_NAME = Path(__file__).stem
 logger = JsonlLogger(app_dir=APP_DIR, page_name=PAGE_NAME)
 
 INCLUDE_FULL_PROMPT_IN_LOG = True
 JST = dt.timezone(dt.timedelta(hours=9), name="Asia/Tokyo")
 
+# ★ ページ専用のセッションキー（他ページと衝突しないようにする）
+SESSION_KEY_LAST = f"{PAGE_NAME}_simple_last_png"      # 現在の修正対象PNG（常に最新）
+SESSION_KEY_UPLOADED = f"{PAGE_NAME}_uploaded_png"     # アップロード直後のPNG（初期元画像）
+
 # --------------------- クライアント & セッション ---------------------
 client: OpenAI = get_client()
-st.session_state.setdefault("simple_last_png", b"")  # 現在の修正対象PNG（常に最新）
-st.session_state.setdefault("uploaded_png", b"")     # アップロード直後のPNG（初期元画像）
+st.session_state.setdefault(SESSION_KEY_LAST, b"")
+st.session_state.setdefault(SESSION_KEY_UPLOADED, b"")
 
 # ============================================================
 # 1) 画像アップロード
@@ -62,15 +83,15 @@ uploaded = st.file_uploader(
     accept_multiple_files=False
 )
 
-col_up1, col_up2 = st.columns([1,1])
+col_up1, col_up2 = st.columns([1, 1])
 with col_up1:
     reset_clicked = st.button("🔁 リセット（画像クリア）", width="stretch")
 with col_up2:
     use_uploaded_clicked = st.button("⬆️ アップロード画像を読み込む", width="stretch")
 
 if reset_clicked:
-    st.session_state["uploaded_png"] = b""
-    st.session_state["simple_last_png"] = b""
+    st.session_state[SESSION_KEY_UPLOADED] = b""
+    st.session_state[SESSION_KEY_LAST] = b""
     st.success("状態をリセットしました。")
     # ログ：リセット
     logger.append({
@@ -86,8 +107,8 @@ if use_uploaded_clicked:
         try:
             img = Image.open(uploaded).convert("RGBA")
             png_bytes = pil_to_png_bytes(img)
-            st.session_state["uploaded_png"] = png_bytes
-            st.session_state["simple_last_png"] = png_bytes  # 初期の修正対象に昇格
+            st.session_state[SESSION_KEY_UPLOADED] = png_bytes
+            st.session_state[SESSION_KEY_LAST] = png_bytes  # 初期の修正対象に昇格
             st.success("アップロード画像を読み込みました。")
             # ログ：アップロード読み込み
             logger.append({
@@ -100,7 +121,7 @@ if use_uploaded_clicked:
             st.error(f"画像の読み込みに失敗しました: {e}")
 
 # 現在の元画像（修正対象）を表示
-current_png = st.session_state.get("simple_last_png", b"")
+current_png = st.session_state.get(SESSION_KEY_LAST, b"")
 if current_png:
     st.subheader("現在の処理対象画像（修正元）")
     st.image(current_png, caption="現在の元画像", width="stretch")
@@ -130,14 +151,14 @@ if st.button("🪄 修正版を生成する", width="stretch"):
     if not edit_prompt.strip():
         st.warning("修正内容を入力してください。")
         st.stop()
-    if not st.session_state.get("simple_last_png"):
+    if not st.session_state.get(SESSION_KEY_LAST):
         st.warning("修正する元画像がありません。アップロード→読み込みを行ってください。")
         st.stop()
 
     with st.spinner("修正版を生成中..."):
         # 一時ファイルにPNGを書き出して images.edit へ
         with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-            tmp.write(st.session_state["simple_last_png"])
+            tmp.write(st.session_state[SESSION_KEY_LAST])
             tmp.seek(0)
             res2 = client.images.edit(
                 model="gpt-image-1",
@@ -153,10 +174,11 @@ if st.button("🪄 修正版を生成する", width="stretch"):
         elif getattr(datum, "url", None):
             out_bytes = url_to_png_bytes(datum.url)
         else:
-            st.error("修正結果が取得できませんでした。"); st.stop()
+            st.error("修正結果が取得できませんでした。")
+            st.stop()
 
         # 🔁 修正版を再び元画像に昇格（連続修正OK）
-        st.session_state["simple_last_png"] = out_bytes
+        st.session_state[SESSION_KEY_LAST] = out_bytes
 
         # ログ：編集
         logger.append({
@@ -179,7 +201,7 @@ if st.button("🪄 修正版を生成する", width="stretch"):
 st.divider()
 st.subheader("3) 生成画像の保存")
 
-png_bytes = st.session_state.get("simple_last_png", b"")
+png_bytes = st.session_state.get(SESSION_KEY_LAST, b"")
 if png_bytes:
     # サムネイル表示（小さめ）
     try:
