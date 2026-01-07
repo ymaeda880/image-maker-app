@@ -1,68 +1,101 @@
 # app.py（image_maker_app）
 """
-🎨 image_maker_app（ログイン必須ガード付き）
+🎨 image_maker_app（ポータルログイン誘導付き）
 
 目的
 ----
-- このアプリは **ログインしていないと来れない** 前提。
-- Cookie の JWT を検証して未ログインなら即ブロックし、ログインページへ誘導。
-- ログイン済みならヘッダー右上に「現在のユーザー名」を表示（任意でログアウトも可能）。
+- この app.py は「入口ページ」。
+- 未ログインでも画面は表示する（ブロックしない）。
+- ただし未ログインなら「ポータルでログインして」と警告し、
+  可能ならポータルへのリンク（/ or /portal 等）を案内する。
 
-実装メモ
+設計方針
 --------
-- Cookie 名や JWT の発行/検証は共通ライブラリ（common_lib）に委譲。
-- extra_streamlit_components.CookieManager を使って Cookie を読み書き。
-- JWT 失効/改ざん検出時は Cookie を掃除して状態不整合を防止。
-- Streamlit 1.31+ の `st.page_link` があればログインページへのリンクを出す。
+- 認証判定は common_lib に一本化（Cookie/JWT/session復元）
+- app.py 側は「誰がログイン中か？」を関数で聞くだけ
+- Cookie の set/delete（ログイン/ログアウト）はこのアプリでは行わない
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-import datetime as dt
 import sys
-from typing import Optional
 
 import streamlit as st
-import extra_streamlit_components as stx
 
-# このファイルの場所: /Users/macmini2025/projects/image_maker_project/image_maker_app/app.py
-# → 2つ上に /Users/macmini2025/projects がある
-PROJECTS_DIR = Path(__file__).resolve().parents[2]  # /Users/macmini2025/projects
+# ============================================================
+# sys.path（設計上の確定事項）※ import より先に必ず実行
+#   /Users/macmini2025/projects/image_maker_project/image_maker_app/app.py
+#   -> parents[2] = /Users/macmini2025/projects
+# ============================================================
+PROJECTS_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECTS_ROOT))
 
-# 念のため存在確認
-if not (PROJECTS_DIR / "common_lib").exists():
-    import streamlit as st
-    st.set_page_config(page_title="image_maker_app", page_icon="🎨", layout="wide")
-    st.error(f"common_lib が見つかりません: {(PROJECTS_DIR / 'common_lib')}")
-    st.stop()
+# ============================================================
+# common_lib（認証は common_lib に一本化）
+# ============================================================
+from common_lib.auth.auth_helpers import get_current_user_from_session_or_cookie, clear_auth_caches
 
-# ★ sys.path に入れるのは「/Users/macmini2025/projects」
-if str(PROJECTS_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECTS_DIR))
-
-
-
-# ✅ デバッグ用（削除してOK）
-# import sys; print("sys.path =", sys.path)
-# 共有ユーティリティ（前提：pages/10_ログイン_最小.py と同じ場所から import できる構成）
-from common_lib.auth.config import COOKIE_NAME
-from common_lib.auth.jwt_utils import verify_jwt  # issue は不要（ここは閲覧ガードのみ）
-
-# ========== ページ基本設定 ==========
+# ============================================================
+# 基本設定（最初に1回だけ）
+# ============================================================
 st.set_page_config(page_title="image_maker_app", page_icon="🎨", layout="wide")
 
-st.title("🖼️ Image Maker — 画像生成と修正のためのAI Creative Studio")
-st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+# ============================================================
+# 認証状態（未ログインでも止めない）
+# ============================================================
+clear_auth_caches()
+user, _payload = get_current_user_from_session_or_cookie(st)
+
+# ============================================================
+# ヘッダー
+# ============================================================
+left, right = st.columns([4, 1])
+with left:
+    st.title("🖼️ Image Maker — 画像生成と修正のためのAI Creative Studio")
+    st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+
+with right:
+    if user:
+        st.caption("ログイン中ユーザー")
+        st.success(f"**{user}**")
+    else:
+        st.caption("ログイン状態")
+        st.warning("未ログイン")
+
+# ============================================================
+# 未ログイン時：警告（画面は出す）
+# ============================================================
+if not user:
+    st.warning(
+        "このアプリの利用にはログインが必要です。"
+        "ポータルでログインしてから、もう一度このアプリを開いてください。"
+    )
+
+    # ポータル導線：環境に合わせて編集OK
+    # - 1) ルートがポータル（/）の運用ならそのまま
+    # - 2) /portal があるなら "/portal" に変更
+    portal_url = "/"
+    try:
+        st.link_button("🔐 ポータルへ移動（ログイン）", portal_url)
+    except Exception:
+        st.markdown(f"🔐 ポータルへ移動（ログイン）：`{portal_url}`")
+
+    st.info("ログイン後、このページを更新（R）するか、再度アプリを開いてください。")
+
+# ============================================================
+# 本文（ログイン済み / 未ログイン共通で表示してよい内容）
+# ============================================================
+st.markdown(
+    """
+左サイドバーのメニューから、利用したい機能を選択してください。  
+まずは **画像生成** ページからお試しください。
+"""
+)
 
 st.markdown(
     """
-    左サイドバーのメニューから、利用したい機能を選択してください。  
-    まずは **画像生成** ページからお試しください。
-    """
-)
-
-st.markdown("""
 ## 🚧 このアプリケーションは現在 **開発中** です
 
 本アプリケーションシステム **Image Maker** は、皆様の業務効率を高めることを目的として、継続的に改良を進めています。
@@ -70,77 +103,31 @@ st.markdown("""
 
 いただいたご意見をもとにプログラムの改善を行い、より使いやすく、業務に役立つツールへと発展させてまいります。
 
-また、画像修正に使うプロンプトのテンプレートなども今後整備していく予定です。「こんなプロンプトが欲しい」「こういう使い方がしたい」などのご提案も大歓迎です。
+また、画像修正に使うプロンプトのテンプレートなども今後整備していく予定です。
+「こんなプロンプトが欲しい」「こういう使い方がしたい」などのご提案も大歓迎です。
 
 ご協力のほど、どうぞよろしくお願いいたします。
-""")
+"""
+)
 
-# -----------------------------------------------------------------------------
-# Cookie ヘルパ
-# -----------------------------------------------------------------------------
-cm = stx.CookieManager(key="cm_image_maker")
+st.divider()
 
-def _clear_cookie_everywhere(name: str) -> None:
+# ============================================================
+# 料金表示（そのまま）
+# ============================================================
+st.markdown("１枚約25円かかります．")
+
+st.markdown(
     """
-    Cookie をできるだけ確実に無効化する。
-    - path="/" を明示した上書き
-    - 現在パスでの上書き
-    - delete() 呼び出し
-    """
-    epoch = dt.datetime.fromtimestamp(0, tz=dt.timezone.utc)
-    cm.set(name, "", expires_at=epoch, path="/")
-    cm.set(name, "", expires_at=epoch)
-    cm.delete(name)
-
-# -----------------------------------------------------------------------------
-# 🔒 入場ガード：Cookie → JWT 検証
-# -----------------------------------------------------------------------------
-token: Optional[str] = cm.get(COOKIE_NAME)
-payload = verify_jwt(token) if token else None
-
-if not payload:
-    # 失効や改ざんの場合は Cookie を掃除
-    if token:
-        _clear_cookie_everywhere(COOKIE_NAME)
-
-    st.error("このアプリはログインが必要です。")
-    # Streamlit 1.31+ の page_link があれば、ページリンクを表示（存在しなくてもクラッシュしない）
-    try:
-        st.page_link("pages/10_ログイン_最小.py", label="🔐 ログインページへ移動", icon="🔑")
-    except Exception:
-        st.info("サイドバーの『ポータルへ戻る』ページからサインインしてください。")
-    st.stop()
-
-# 以降はログイン済み
-current_user = payload.get("sub") or "(unknown)"
-
-# -----------------------------------------------------------------------------
-# ヘッダー：タイトル＋ログイン中ユーザーの表示（任意でログアウト）
-# -----------------------------------------------------------------------------
-# 右上にユーザー名を出す軽いヘッダーバー
-h1, h2 = st.columns([4, 1])
-with h1:
-    st.title("🎨 画像生成アプリ")
-with h2:
-    st.caption("ログイン中ユーザー")
-    st.success(f"**{current_user}**")
-
-# -----------------------------------------------------------------------------
-# （以下、従来のアプリ内容）
-# -----------------------------------------------------------------------------
-
-st.markdown("""
-    １枚約25円かかります．     
-            """)
-
-
-st.markdown("""
-このアプリでは、**プロンプト**を入力して OpenAI GPT-image-1（DALL·E 3の改良版）で画像を生成できます。
+このアプリでは、**プロンプト**を入力して OpenAI GPT-image-1 で画像を生成できます。  
 左の「サイドバー」から **『画像生成』** を開いてください。
-""")
+"""
+)
 
 with st.expander("使い方", expanded=False):
-    st.markdown("""
+    st.markdown(
+        """
 1. 画像を生成するときは，「サイドバー」の『画像生成』から行ってください．
 2. 画像を修正するときは，「サイドバー」の『画像修正』から行ってください．
-""")
+"""
+    )

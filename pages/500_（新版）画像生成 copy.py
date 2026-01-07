@@ -43,15 +43,6 @@ from common_lib.auth.auth_helpers import require_login
 # ★ 追加：共通JSONLロガー
 from common_lib.logs.jsonl_logger import JsonlLogger, sha256_short
 
-# Inboxへ保存（正本：common_lib.inbox.*）
-from common_lib.inbox.inbox_ops.ingest import ingest_to_inbox
-from common_lib.inbox.inbox_common.types import (
-    IngestRequest,
-    InboxNotAvailable,
-    QuotaExceeded,
-    IngestFailed,
-)
-
 
 # ============================================================
 # ページ設定
@@ -261,50 +252,5 @@ if png_bytes:
         mime="image/png",
         width="stretch",
     )
-
-    st.markdown("---")
-    st.subheader("📥 Inbox へ保存")
-
-    inbox_filename = st.text_input(
-        "Inboxに保存するファイル名",
-        value=dl_name,
-        key=f"{PAGE_NAME}_inbox_filename",
-        help="Inboxに保存されるファイル名です（.png 推奨）",
-    )
-
-    if st.button("📥 この画像を Inbox に保存", type="primary", width="stretch"):
-        try:
-            result = ingest_to_inbox(
-                projects_root=PROJECTS_ROOT,
-                req=IngestRequest(
-                    user_sub=sub,
-                    filename=inbox_filename,
-                    data=png_bytes,
-                    tags_json='["image_maker/generated"]',
-                    origin={
-                        "app": APP_DIR.name,
-                        "page": PAGE_NAME,
-                        "action": "image_generate_or_edit",
-                    },
-                ),
-            )
-            st.success("Inbox に保存しました。")
-
-        except InboxNotAvailable:
-            st.error("❌ Inbox が存在しません。ストレージ接続を確認してください。")
-
-        except QuotaExceeded as e:
-            st.error(
-                f"❌ 容量オーバーです。"
-                f" 現在={e.current} / 追加={e.incoming} / 上限={e.quota}"
-            )
-
-        except IngestFailed as e:
-            st.error(f"❌ Inbox への保存に失敗しました: {e}")
-
-
-
 else:
     st.info("まだ保存できる画像がありません。上で生成または修正を行ってください。")
-
-

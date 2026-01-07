@@ -30,13 +30,16 @@ def _add_commonlib_parent_to_syspath():
 _add_commonlib_parent_to_syspath()
 # --- then your original imports ---
 from common_lib.auth.auth_helpers import get_current_user_from_session_or_cookie, is_admin
+from common_lib.storage.external_ssd_root import resolve_storage_subdir_root
+from common_lib.auth.auth_helpers import require_admin_user
+
 
 
 
 # ============================================================
 # アクセス制御
 # ============================================================
-user, payload = get_current_user_from_session_or_cookie(st)
+#user, payload = get_current_user_from_session_or_cookie(st)
 
 st.set_page_config(page_title="画像ログ集計（管理者専用）", page_icon="📊", layout="wide")
 
@@ -45,73 +48,96 @@ st.set_page_config(page_title="画像ログ集計（管理者専用）", page_ic
 # デバッグ用
 #
 
-from common_lib.auth.auth_helpers import (
-    _resolve_settings_path, get_admin_users, clear_auth_caches
-)
+# from common_lib.auth.auth_helpers import (
+#     _resolve_settings_path, get_admin_users, clear_auth_caches
+# )
 
-clear_auth_caches()  # ← 念のためキャッシュ削除
+#clear_auth_caches()  # ← 念のためキャッシュ削除
 # st.write("🪶 設定ファイル探索結果:", _resolve_settings_path())
 # st.write("🪶 管理者一覧:", sorted(get_admin_users()))
-st.write("🪶 現在のユーザー:", user)
+#st.write("🪶 現在のユーザー:", user)
 
 
-
-if not user:
-    st.warning("未ログインです。サインインしてください。")
-    st.stop()
-
-if not is_admin(user):
+sub = require_admin_user(st)
+if not sub:
     st.error("🚫 このページは管理者のみアクセスできます。")
     st.stop()
 
+st.success(f"✅ 管理者ログイン中: **{sub}**")  # ← 表示はここで自由に
+
+user=sub
+
+# if not user:
+#     st.warning("未ログインです。サインインしてください。")
+#     st.stop()
+
+# if not is_admin(user):
+#     st.error("🚫 このページは管理者のみアクセスできます。")
+#     st.stop()
+
 
 
 # ============================================================
-# 基本設定
+# 基本設定（Storages/logs/<app_name>/ の monthly JSONL を読む）
 # ============================================================
 st.title("📊 画像生成/修正 ログ集計（管理者専用）")
 
-APP_DIR = Path(__file__).resolve().parents[1]
+HERE = Path(__file__).resolve()
+APP_DIR = HERE.parents[1]
 APP_NAME = APP_DIR.name
-# ★ ここを変更：共通ロガーの出力規約（logs/{app_name}.log.jsonl）に合わせる
-LOG_FILE = (APP_DIR / "logs" / f"{APP_NAME}.log.jsonl").resolve()
+
+# projects ルート（このページの既存構造に合わせる：pages -> app -> project -> monorepo）
+PROJ_DIR = HERE.parents[2]
+MONO_ROOT = HERE.parents[3]
+PROJECTS_ROOT = MONO_ROOT
+
+# Storages ルート
+STORAGE_ROOT = resolve_storage_subdir_root(PROJECTS_ROOT, subdir="Storages")
+
+# monthly ログの置き場所：Storages/logs/<app_name>/
+LOG_DIR = (Path(STORAGE_ROOT) / "logs" / APP_NAME).resolve()
 
 JST = dt.timezone(dt.timedelta(hours=9), name="Asia/Tokyo")
+
 
 
 # ============================================================
 # ログ読込
 # ============================================================
 @st.cache_data(show_spinner=False)
-def load_logs(path: Path) -> pd.DataFrame:
-    if not path.exists():
+def load_logs(paths: List[Path]) -> pd.DataFrame:
+    # 存在するファイルだけ読む
+    targets = [p for p in paths if p and p.exists()]
+    if not targets:
         return pd.DataFrame()
 
     rows: List[Dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                rows.append(json.loads(line.strip()))
-            except Exception:
-                continue
+    for path in targets:
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rows.append(json.loads(line))
+                    except Exception:
+                        continue
+        except Exception:
+            continue
 
     df = pd.DataFrame(rows)
+
     if "ts" in df.columns:
-        # 注意: 文字列が +09:00 を含む場合もあるので utc=True 前提だと NaT になり得る。
-        # ここは「UTC扱い」より「そのままパース→Asia/Tokyoへ寄せる」方が安全な場合があります。
         ts = pd.to_datetime(df["ts"], errors="coerce")
         try:
-            # tz が無い/混在しても一旦 UTC として扱える場合のみ
             if getattr(ts.dt, "tz", None) is None:
                 ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
         except Exception:
             pass
-
-        # 最終的に Tokyo に寄せる
         try:
             ts = ts.dt.tz_convert("Asia/Tokyo")
         except Exception:
-            # tz-naive の場合
             ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
 
         df["ts"] = ts
@@ -139,25 +165,74 @@ with st.sidebar:
         st.rerun()
 
 
-df = load_logs(LOG_FILE)
+# ============================================================
+# ログファイル列挙（monthly：<app_name>_YYYY-MM.jsonl）
+# ============================================================
+all_files = []
+if LOG_DIR.exists():
+    # 例：image_maker_app_2025-12.jsonl
+    all_files = sorted(LOG_DIR.glob(f"{APP_NAME}_*.jsonl"))
+
+# ファイル名から YYYY-MM を抽出
+def _month_from_name(p: Path) -> str | None:
+    stem = p.stem  # e.g. image_maker_app_2025-12
+    suffix = stem.replace(f"{APP_NAME}_", "", 1)
+    # 厳密チェックはしない（想定外ファイルは無視）
+    if len(suffix) == 7 and suffix[4] == "-":
+        return suffix
+    return None
+
+month_to_file: dict[str, Path] = {}
+for p in all_files:
+    m = _month_from_name(p)
+    if m:
+        month_to_file[m] = p
+
+available_months = sorted(month_to_file.keys())
+
+with st.sidebar:
+    st.header("ログ")
+    st.caption("Storages/logs/<app_name>/ の monthly ログを読みます。")
+    if not available_months:
+        st.warning("ログファイルが見つかりません。")
+    picked_months = st.multiselect(
+        "対象年月（YYYY-MM）",
+        options=available_months,
+        default=available_months[-3:] if len(available_months) >= 3 else available_months,
+        help="複数選択可。未選択の場合は空になります。"
+    )
+
+    if st.button("🔄 ログを読み直す"):
+        st.cache_data.clear()
+        st.rerun()
+
+selected_paths = [month_to_file[m] for m in picked_months if m in month_to_file]
+df = load_logs(selected_paths)
+
 
 
 # ============================================================
 # ファイル情報
 # ============================================================
 with st.expander("📁 ログファイル情報", expanded=False):
-    st.write(f"**Path:** `{LOG_FILE}`")
-    if LOG_FILE.exists():
-        mtime = dt.datetime.fromtimestamp(LOG_FILE.stat().st_mtime, tz=JST)
-        st.write(f"**最終更新:** {mtime:%Y-%m-%d %H:%M:%S %Z}")
-        st.write(f"**行数:** {len(df):,}")
-    else:
-        st.warning("ログファイルが存在しません。")
+    st.write(f"**Dir:** `{LOG_DIR}`")
+    if not selected_paths:
+        st.warning("対象年月が未選択、またはログファイルがありません。")
         st.stop()
 
-if df.empty:
-    st.warning("ログデータがありません。")
-    st.stop()
+    st.write("**Files:**")
+    for p in selected_paths:
+        st.write(f"- `{p.name}`")
+
+    # 最終更新（選択ファイルの最大）
+    try:
+        latest = max(selected_paths, key=lambda p: p.stat().st_mtime)
+        mtime = dt.datetime.fromtimestamp(latest.stat().st_mtime, tz=JST)
+        st.write(f"**最終更新（最大）:** {mtime:%Y-%m-%d %H:%M:%S %Z}")
+    except Exception:
+        pass
+
+    st.write(f"**行数（読み込み後）:** {len(df):,}")
 
 
 # ============================================================
@@ -275,7 +350,7 @@ else:
     # 合計（generate + edit）
     pivot_total = (
         df_um
-        .groupby(["user", "month"])
+        .groupby(["user", "month"], observed=False)
         .size()
         .unstack(fill_value=0)
         .reindex(columns=months, fill_value=0)
@@ -286,7 +361,7 @@ else:
     def pivot_for(action: str) -> pd.DataFrame:
         _tmp = (
             df_um[df_um["action"] == action]
-            .groupby(["user", "month"])
+            .groupby(["user", "month"], observed=False)
             .size()
             .unstack(fill_value=0)
             .reindex(columns=months, fill_value=0)
@@ -354,109 +429,56 @@ else:
             st.bar_chart(df_plot.T)
 
 # ============================================================
-# 🧹 年月でログ削除（JSONLを物理削除）
+# 🧹 年月でログ削除（monthly ファイルを物理削除）
 # ============================================================
 st.divider()
-st.subheader("🧹 年月でログ削除")
+st.subheader("🧹 年月でログ削除（monthlyファイル削除）")
 
-# 利用可能な年月リスト（YYYY-MM）
-all_months = sorted(df["month"].dropna().unique().tolist())
+all_months = available_months
 sel_months = st.multiselect(
-    "削除する年月（複数選択可）", options=all_months,
-    help="選んだ年月に属する行（generate / edit など全イベント）を物理削除します。元に戻せないため注意。"
+    "削除する年月（複数選択可）",
+    options=all_months,
+    help="選んだ年月の monthly ログファイル（例：app_YYYY-MM.jsonl）を物理削除します。元に戻せないため注意。"
 )
 
-# 安全な原子的書き換え
-def _atomic_write_jsonl(path: Path, records: list[dict]) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        for r in records:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    tmp.replace(path)
-
 if sel_months:
-    # 削除見込み件数（全体 df ベース）
-    to_delete_count = int(df[df["month"].isin(sel_months)].shape[0])
-    st.warning(f"削除対象: **{to_delete_count:,} 行**（{', '.join(sel_months)}）")
+    files_to_delete = [month_to_file[m] for m in sel_months if m in month_to_file]
+    st.warning("削除対象ファイル:")
+    for p in files_to_delete:
+        st.write(f"- `{p.name}`")
 
-    # 最終確認
     confirm = st.text_input("確認のため DELETE と入力してください", placeholder="DELETE")
+    do_purge = st.button("選択した年月のログファイルを削除する", type="secondary")
 
-    # 実行ボタン
-    do_purge = st.button("選択した年月のログを削除する", type="secondary", disabled=(to_delete_count == 0))
     if do_purge:
         if confirm != "DELETE":
             st.error("確認文字列が一致しません。DELETE と入力してください。")
-        elif not LOG_FILE.exists():
-            st.error("ログファイルが見つかりません。")
         else:
-            # 1) 全行を読み、ts→YYYY-MM を算出してフィルタ
-            original: list[dict] = []
-            kept: list[dict] = []
-            with LOG_FILE.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
+            # バックアップしてから削除（同階層に .bak を作る）
+            ok = 0
+            ng = 0
+            for p in files_to_delete:
+                try:
+                    if not p.exists():
                         continue
-                    try:
-                        rec = json.loads(line)
-                    except Exception:
-                        # 読めない行は温存（安全側）
-                        kept.append({"_raw": line})
-                        continue
+                    bak = p.with_suffix(p.suffix + ".bak")
+                    # 既存bakがあれば上書きしない（安全側）
+                    if not bak.exists():
+                        bak.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+                    p.unlink()
+                    ok += 1
+                except Exception:
+                    ng += 1
 
-                    original.append(rec)
-                    ts = rec.get("ts")
-                    month = None
-                    if ts:
-                        try:
-                            # ts から JST で YYYY-MM を算出
-                            month = pd.to_datetime(ts, errors="coerce")
-                            if month is not pd.NaT:
-                                if getattr(month, "tzinfo", None) is None:
-                                    month = month.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
-                                else:
-                                    month = month.tz_convert("Asia/Tokyo")
-                                month = month.strftime("%Y-%m")
-                            else:
-                                month = None
-                        except Exception:
-                            month = None
+            if ng == 0:
+                st.success(f"削除完了: {ok} ファイル")
+            else:
+                st.warning(f"削除: {ok} 成功 / {ng} 失敗（権限やI/Oを確認）")
 
-                    if month not in sel_months:
-                        kept.append(rec)
-
-            removed = len(original) - (len([r for r in kept if isinstance(r, dict)]))
-            # 2) バックアップ
-            try:
-                backup = LOG_FILE.with_suffix(".jsonl.bak")  # 例: *.log.jsonl.bak
-                backup.write_text(LOG_FILE.read_text(encoding="utf-8"), encoding="utf-8")
-            except Exception as e:
-                st.error(f"バックアップ作成に失敗しました: {e}")
-                st.stop()
-
-            # 3) 原子的に書き換え
-            try:
-                tmp = LOG_FILE.with_suffix(LOG_FILE.suffix + ".tmp")
-                with tmp.open("w", encoding="utf-8") as wf:
-                    for r in kept:
-                        if isinstance(r, dict) and "_raw" in r:
-                            wf.write(r["_raw"] + "\n")
-                        else:
-                            wf.write(json.dumps(r, ensure_ascii=False) + "\n")
-                tmp.replace(LOG_FILE)
-
-                st.success(f"削除完了: **{removed:,} 行** を削除 / 残り {len(kept):,} 行")
-                st.caption(f"バックアップを作成: `{backup.name}`")
-
-                # キャッシュ無効化 → リロード
-                load_logs.clear()
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"削除に失敗しました: {e}")
+            st.cache_data.clear()
+            st.rerun()
 else:
-    st.caption("削除する年月を選ぶと実行ボタンが現れます。")
+    st.caption("削除する年月を選ぶと削除ボタンが有効になります。")
 
 
 
