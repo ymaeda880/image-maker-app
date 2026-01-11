@@ -28,19 +28,14 @@ import streamlit as st
 #   /Users/macmini2025/projects/image_maker_project/image_maker_app/app.py
 #   -> parents[2] = /Users/macmini2025/projects
 # ============================================================
-_THIS = Path(__file__).resolve()
-APP_ROOT = _THIS.parent
-APP_NAME = APP_ROOT.name                  # ← app_name を自動取得
-PROJECTS_ROOT = _THIS.parents[2]
-
+PROJECTS_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECTS_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECTS_ROOT))
 
 # ============================================================
 # common_lib（認証は common_lib に一本化）
 # ============================================================
-from common_lib.sessions import SessionConfig, init_session, heartbeat_tick
-from common_lib.auth.auth_helpers import require_login
+from common_lib.auth.auth_helpers import get_current_user_from_session_or_cookie, clear_auth_caches
 
 # ============================================================
 # 基本設定（最初に1回だけ）
@@ -48,32 +43,46 @@ from common_lib.auth.auth_helpers import require_login
 st.set_page_config(page_title="image_maker_app", page_icon="🎨", layout="wide")
 
 # ============================================================
-# Session heartbeat（全ページ共通・app.py）
+# 認証状態（未ログインでも止めない）
 # ============================================================
-SESSIONS_DB = (
-    PROJECTS_ROOT / "Storages" / "_admin" / "sessions" / "sessions.db"
-)
-CFG = SessionConfig()  # heartbeat=30s, TTL=120s（既定）
+clear_auth_caches()
+user, _payload = get_current_user_from_session_or_cookie(st)
 
 # ============================================================
-# 認証状態
+# ヘッダー
 # ============================================================
-sub = require_login(st)
-if not sub:
-    st.stop()
-left, right = st.columns([2, 1])
+left, right = st.columns([4, 1])
 with left:
-    st.title("🖼️ Image Maker — AI Creative Studio")
+    st.title("🖼️ Image Maker — 画像生成と修正のためのAI Creative Studio")
+    st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+
 with right:
-    st.success(f"✅ ログイン中: **{sub}**")
-st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+    if user:
+        st.caption("ログイン中ユーザー")
+        st.success(f"**{user}**")
+    else:
+        st.caption("ログイン状態")
+        st.warning("未ログイン")
 
-user = sub
+# ============================================================
+# 未ログイン時：警告（画面は出す）
+# ============================================================
+if not user:
+    st.warning(
+        "このアプリの利用にはログインが必要です。"
+        "ポータルでログインしてから、もう一度このアプリを開いてください。"
+    )
 
-# ───────────────── sessions（初期化 + heartbeat） ─────────────────
-init_session(db_path=SESSIONS_DB, cfg=CFG, user_sub=user, app_name=APP_NAME)
-heartbeat_tick(db_path=SESSIONS_DB, cfg=CFG, user_sub=user, app_name=APP_NAME)
+    # ポータル導線：環境に合わせて編集OK
+    # - 1) ルートがポータル（/）の運用ならそのまま
+    # - 2) /portal があるなら "/portal" に変更
+    portal_url = "/"
+    try:
+        st.link_button("🔐 ポータルへ移動（ログイン）", portal_url)
+    except Exception:
+        st.markdown(f"🔐 ポータルへ移動（ログイン）：`{portal_url}`")
 
+    st.info("ログイン後、このページを更新（R）するか、再度アプリを開いてください。")
 
 # ============================================================
 # 本文（ログイン済み / 未ログイン共通で表示してよい内容）

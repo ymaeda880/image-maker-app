@@ -111,7 +111,13 @@ INCLUDE_FULL_PROMPT_IN_LOG = True
 # 画像生成
 # ============================================================
 prompt = st.text_area("生成プロンプト", height=100)
-size = st.selectbox("サイズ", ["1024x1024", "1024x1536", "1536x1024"], index=0)
+size = st.selectbox(
+    "サイズ",
+    ["1024x1024", "1024x1536", "1536x1024", "auto"],
+    index=0,
+)
+
+
 
 if st.button("生成する", type="primary", width="stretch"):
     if not prompt.strip():
@@ -179,9 +185,16 @@ edit_prompt = st.text_area(
 )
 edit_size = st.selectbox(
     "修正後のサイズ",
-    ["1024x1024", "1024x1536", "1536x1024"],
+    [
+        "1024x1024",
+        "1024x1536",
+        "1536x1024",
+        "auto",
+    ],
     index=0,
 )
+
+
 
 if st.button(
     "修正版を生成する（修正内容のプロンプトを反映します．修正のプロンプトを入力してからクリックしてください．）",
