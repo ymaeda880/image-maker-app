@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # pages/30_ログ集計.py
 # ============================================================
 # 📊 ログ集計（ログインユーザー専用 / このアプリのみ）
@@ -7,12 +8,10 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-import json
-import datetime as dt
-from typing import List, Dict, Any
+from typing import List
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 # ============================================================
 # common_lib を import 可能にする（99 と同じ方式）
@@ -27,35 +26,43 @@ def _add_commonlib_parent_to_syspath():
                 return str(parent)
     return None
 
+
 _add_commonlib_parent_to_syspath()
 
-from common_lib.auth.auth_helpers import require_login
-from common_lib.storage.external_ssd_root import resolve_storage_subdir_root
-
+from common_lib.auth.auth_helpers import require_login  # noqa: E402
+from common_lib.logs.paths import get_log_layout, month_to_file_map  # noqa: E402
+from common_lib.logs.jsonl_reader import read_jsonl_files  # noqa: E402
+from common_lib.logs.normalize import normalize_log_df  # noqa: E402
+from common_lib.ui.banner_lines import render_banner_line_by_key
 
 # ============================================================
 # ページ設定
 # ============================================================
 st.set_page_config(
-    page_title="ログ集計（自分の利用履歴）",
+    page_title="Image Maker / ログ集計",
     page_icon="📊",
     layout="wide",
 )
+render_banner_line_by_key("pink_soft")
 
 # ============================================================
 # ログイン必須（★ 管理者ではない ★）
 # ============================================================
+
 sub = require_login(st)
 if not sub:
     st.stop()
-
-st.success(f"✅ ログイン中: **{sub}**")
+left, right = st.columns([2, 1])
+with left:
+    st.title("📊 利用履歴")
+with right:
+    st.success(f"✅ ログイン中: **{sub}**")
 
 
 # ============================================================
 # 基本設定（このアプリのログのみ）
 # ============================================================
-st.title("📊 ログ集計（自分の利用履歴）")
+# st.title("📊 ログ集計（利用履歴）")
 
 HERE = Path(__file__).resolve()
 APP_DIR = HERE.parents[1]
@@ -64,59 +71,37 @@ APP_NAME = APP_DIR.name
 MONO_ROOT = HERE.parents[3]
 PROJECTS_ROOT = MONO_ROOT
 
-STORAGE_ROOT = resolve_storage_subdir_root(PROJECTS_ROOT, subdir="Storages")
-LOG_DIR = (Path(STORAGE_ROOT) / "logs" / APP_NAME).resolve()
-
-JST = dt.timezone(dt.timedelta(hours=9), name="Asia/Tokyo")
+# ✅ common_lib 側の正本で log_dir を決定
+_layout = get_log_layout(PROJECTS_ROOT, APP_NAME)
+LOG_DIR = _layout.log_dir
 
 
 # ============================================================
-# ログ読込
+# ログ読込（common_lib に寄せた Reader/Normalizer を利用）
 # ============================================================
 @st.cache_data(show_spinner=False)
 def load_logs(paths: List[Path]) -> pd.DataFrame:
-    targets = [p for p in paths if p and p.exists()]
+    targets = [Path(p) for p in (paths or []) if p and Path(p).exists()]
     if not targets:
-        return pd.DataFrame()
+        # 下流で df["date"] 等に触れるので、最低限の列は用意
+        return pd.DataFrame(columns=["ts", "date", "month", "user", "action"])
 
-    rows: List[Dict[str, Any]] = []
-    for path in targets:
-        try:
-            with path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        rows.append(json.loads(line))
-                    except Exception:
-                        continue
-        except Exception:
-            continue
+    df = read_jsonl_files(targets)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["ts", "date", "month", "user", "action"])
 
-    df = pd.DataFrame(rows)
+    df = normalize_log_df(df)
 
-    if "ts" in df.columns:
-        ts = pd.to_datetime(df["ts"], errors="coerce")
-        try:
-            if getattr(ts.dt, "tz", None) is None:
-                ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
-        except Exception:
-            pass
-        try:
-            ts = ts.dt.tz_convert("Asia/Tokyo")
-        except Exception:
-            ts = ts.dt.tz_localize("Asia/Tokyo", nonexistent="shift_forward", ambiguous="NaT")
+    # 念のため：下流が参照する列を保証
+    for col, default in [
+        ("ts", pd.NaT),
+        ("date", pd.NaT),
+        ("month", None),
+        ("user", "(anonymous)"),
+    ]:
+        if col not in df.columns:
+            df[col] = default
 
-        df["ts"] = ts
-        df["date"] = df["ts"].dt.date
-        df["month"] = df["ts"].dt.strftime("%Y-%m")
-    else:
-        df["ts"] = pd.NaT
-        df["date"] = pd.NaT
-        df["month"] = None
-
-    df["user"] = df.get("user", "(anonymous)").fillna("(anonymous)")
     return df
 
 
@@ -133,25 +118,9 @@ with st.sidebar:
 
 
 # ============================================================
-# 月次ログファイル列挙
+# 月次ログファイル列挙（common_lib の正本に寄せる）
 # ============================================================
-all_files = []
-if LOG_DIR.exists():
-    all_files = sorted(LOG_DIR.glob(f"{APP_NAME}_*.jsonl"))
-
-def _month_from_name(p: Path) -> str | None:
-    stem = p.stem
-    suffix = stem.replace(f"{APP_NAME}_", "", 1)
-    if len(suffix) == 7 and suffix[4] == "-":
-        return suffix
-    return None
-
-month_to_file: dict[str, Path] = {}
-for p in all_files:
-    m = _month_from_name(p)
-    if m:
-        month_to_file[m] = p
-
+month_to_file = month_to_file_map(LOG_DIR, log_name=APP_NAME)
 available_months = sorted(month_to_file.keys())
 
 with st.sidebar:
@@ -185,6 +154,10 @@ with st.expander("📁 ログファイル情報", expanded=False):
 # ============================================================
 # 自分のログのみに限定（★ 重要 ★）
 # ============================================================
+if "user" not in df.columns:
+    st.warning("ログに user 列が見つからないため、自分のログに絞り込めません。")
+    st.stop()
+
 df = df[df["user"] == sub].copy()
 
 if df.empty:
@@ -197,6 +170,10 @@ if df.empty:
 # ============================================================
 st.divider()
 st.subheader("🔍 フィルタ")
+
+if "date" not in df.columns:
+    st.warning("ログに date 列が見つからないため、日付フィルタが使えません。")
+    st.stop()
 
 c1, c2 = st.columns(2)
 min_date, max_date = df["date"].min(), df["date"].max()
@@ -215,6 +192,9 @@ st.caption(f"対象レコード: **{len(fdf):,} / {len(df):,}**")
 # ============================================================
 # サマリ
 # ============================================================
+if "action" not in fdf.columns:
+    fdf["action"] = None
+
 gen_cnt = (fdf["action"] == "generate").sum()
 edit_cnt = (fdf["action"] == "edit").sum()
 total_cnt = len(fdf)
@@ -230,6 +210,10 @@ m3.metric("合計", f"{total_cnt:,}")
 # ============================================================
 st.divider()
 st.subheader("🗓️ 月別 集計")
+
+if "month" not in fdf.columns:
+    st.warning("ログに month 列が見つからないため、月別集計ができません。")
+    st.stop()
 
 monthly = (
     fdf[fdf["action"].isin(["generate", "edit"])]
@@ -256,8 +240,7 @@ st.download_button(
     mime="text/csv",
 )
 
-
 # ============================================================
 # 終了
 # ============================================================
-st.info(f"✅ {sub} として、自分のログのみを表示しています。")
+# st.info(f"✅ {sub} として、自分のログのみを表示しています。")

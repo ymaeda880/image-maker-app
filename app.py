@@ -39,40 +39,46 @@ if str(PROJECTS_ROOT) not in sys.path:
 # ============================================================
 # common_lib（認証は common_lib に一本化）
 # ============================================================
-from common_lib.sessions import SessionConfig, init_session, heartbeat_tick
-from common_lib.auth.auth_helpers import require_login
+from common_lib.sessions.app_entry import app_session_heartbeat
+from common_lib.ui.ui_basics import subtitle
+from common_lib.ui.banner_lines import render_banner_line_by_key
 
 # ============================================================
 # 基本設定（最初に1回だけ）
 # ============================================================
-st.set_page_config(page_title="image_maker_app", page_icon="🎨", layout="wide")
+st.set_page_config(page_title="Image Maker", page_icon="🎨", layout="wide")
+render_banner_line_by_key("pink_soft")
 
 # ============================================================
-# Session heartbeat（全ページ共通・app.py）
+# ヒーローバナー（app.py 最上部）
 # ============================================================
-SESSIONS_DB = (
-    PROJECTS_ROOT / "Storages" / "_admin" / "sessions" / "sessions.db"
+# BANNER_PATH = (
+#     PROJECTS_ROOT
+#     / "image_maker_project"
+#     / "image_maker_app"
+#     / "assets"
+#     / "image_maker_banner_1600x320.png"
+# )
+
+# if BANNER_PATH.exists():
+#     st.image(
+#         str(BANNER_PATH),
+#         width="stretch",   # use_container_width は使わない方針
+#     )
+
+sub = app_session_heartbeat(
+    st,
+    PROJECTS_ROOT,
+    app_name=APP_NAME,
 )
-CFG = SessionConfig()  # heartbeat=30s, TTL=120s（既定）
 
-# ============================================================
-# 認証状態
-# ============================================================
-sub = require_login(st)
-if not sub:
-    st.stop()
 left, right = st.columns([2, 1])
 with left:
-    st.title("🖼️ Image Maker — AI Creative Studio")
+    st.title("🖼️ Image Maker")
 with right:
     st.success(f"✅ ログイン中: **{sub}**")
-st.caption("Create ・ Improve ・ Transform — 画像生成のための文章改善ワークスペース")
+subtitle("AI Creative Studio")
 
-user = sub
-
-# ───────────────── sessions（初期化 + heartbeat） ─────────────────
-init_session(db_path=SESSIONS_DB, cfg=CFG, user_sub=user, app_name=APP_NAME)
-heartbeat_tick(db_path=SESSIONS_DB, cfg=CFG, user_sub=user, app_name=APP_NAME)
 
 
 # ============================================================
