@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# image_maker_app/pages/22_画像生成.py
+# toolkit_app/pages/22_画像生成.py
 # ============================================================
 # 🧪 テンプレ寄せ：画像生成＋何度でも修正（gpt-image-1）
 #
@@ -51,17 +51,16 @@ import datetime as dt
 # ============================================================
 import streamlit as st
 
+# ============================================================
+# 正本：sessions（ログイン＋heartbeat）
+# ============================================================
+from common_lib.sessions.page_entry import page_session_heartbeat
+from common_lib.ui.ui_basics import subtitle
 
 # ============================================================
 # 正本：AI routing（画像）
 # ============================================================
 from common_lib.ai.routing import generate_image, edit_image  # type: ignore
-
-# ============================================================
-# 正本：AI model catalog / picker
-# ============================================================
-from common_lib.ai.models import IMAGE_MODEL_CATALOG, DEFAULT_IMAGE_MODEL_KEY
-from common_lib.ui.model_picker import render_image_model_picker
 
 # ============================================================
 # 正本：busy（ai_runs.db）
@@ -90,27 +89,16 @@ from common_lib.inbox.inbox_common.types import (
 )
 
 # ============================================================
-# common_lib（共通ヘッダー）
+# UI：バナー（任意）
 # ============================================================
-from common_lib.ui.page_header import render_standard_page_header
-
-# ============================================================
-# lib（ページ説明UI）
-# ============================================================
-from lib.explanation.exp_image_generate import (
-    render_image_generate_page_intro,
-    render_image_generate_help_expander,
-)
+from common_lib.ui.banner_lines import render_banner_line_by_key
 
 # ============================================================
 # 定数（固定）
 # ============================================================
+MODEL_IMAGE = "gpt-image-1"
+PROVIDER_IMAGE = "openai"
 JST = dt.timezone(dt.timedelta(hours=9), name="Asia/Tokyo")
-
-# ============================================================
-# 定数（モデル既定値）
-# ============================================================
-DEFAULT_MODEL_KEY = DEFAULT_IMAGE_MODEL_KEY
 
 # ============================================================
 # セッションキー（ページ専用）
@@ -119,7 +107,6 @@ K_LAST_PNG = f"{PAGE_NAME}__last_png"
 K_LAST_PROMPT = f"{PAGE_NAME}__last_prompt"
 K_LAST_EDIT_PROMPT = f"{PAGE_NAME}__last_edit_prompt"
 K_SIZE = f"{PAGE_NAME}__size"  # ★ 生成/修正 共通（ボタン1組）
-K_MODEL_KEY = f"{PAGE_NAME}__image_model_key"
 K_DL_NAME = f"{PAGE_NAME}__dl_name"
 K_LAST_RUN_ID = f"{PAGE_NAME}__last_run_id"
 K_HAS_TRIED = f"{PAGE_NAME}__has_tried"  # 初回メッセージ抑制用
@@ -132,34 +119,11 @@ st.session_state.setdefault(K_LAST_PNG, b"")
 st.session_state.setdefault(K_LAST_PROMPT, "")
 st.session_state.setdefault(K_LAST_EDIT_PROMPT, "背景を夕焼けに、全体をシネマティックに")
 st.session_state.setdefault(K_SIZE, "1024x1024")
-st.session_state.setdefault(K_MODEL_KEY, DEFAULT_MODEL_KEY)
 st.session_state.setdefault(K_DL_NAME, "")
 st.session_state.setdefault(K_LAST_RUN_ID, "")
 st.session_state.setdefault(K_HAS_TRIED, False)
 st.session_state.setdefault(K_INBOX_FILENAME, "")
 
-# ============================================================
-# helper：model_key -> (provider, model)
-# ============================================================
-def _parse_model_key(model_key: str) -> tuple[str, str]:
-    if ":" not in model_key:
-        return ("openai", model_key.strip())
-
-    p, m = model_key.split(":", 1)
-    return (p.strip(), m.strip())
-
-
-# ============================================================
-# helper：Gemini availability
-# ============================================================
-def _gemini_available() -> bool:
-    try:
-        from google import genai  # type: ignore
-        _ = genai
-        return True
-    except Exception:
-        return False
-    
 # ============================================================
 # ImageResult -> PNG bytes（URL取得に timeout）
 # ============================================================
@@ -208,66 +172,34 @@ INCLUDE_FULL_PROMPT_IN_LOG = True
 # ============================================================
 # ページ設定
 # ============================================================
-st.set_page_config(
-    page_title="Image Maker / 画像生成",
-    page_icon="🎨",
-    layout="wide",
-)
-
+st.set_page_config(page_title="Image Maker / 画像生成", page_icon="🧪", layout="wide")
+render_banner_line_by_key("pink_soft")
 
 # ============================================================
-# 共通ヘッダー
-# - settings.toml から BANNER_KEY を取得
-# - banner / theme / intro CSS を描画
-# - page_session_heartbeat を実行
-# - title / subtitle / ログイン状態を描画
+# ログイン（heartbeat）
 # ============================================================
-sub, theme, BANNER_KEY, settings = render_standard_page_header(
-    st_module=st,
-    projects_root=PROJECTS_ROOT,
-    app_dir=APP_DIR,
+sub = page_session_heartbeat(
+    st,
+    PROJECTS_ROOT,
     app_name=APP_NAME,
     page_name=PAGE_NAME,
-    title="🎨🖌️ 画像生成",
-    subtitle_text="画像生成モデルをサイドバーで選択可能",
-    default_banner_key="pink_soft",
 )
 
+# ============================================================
+# タイトル + ログイン表示
+# ============================================================
+left, right = st.columns([2, 1])
+with left:
+    st.title("🎨🖌️ 画像生成")
+with right:
+    st.success(f"✅ ログイン中: **{sub}**")
 
-# ============================================================
-# ページ説明
-# ============================================================
-render_image_generate_page_intro()
-
-
-# ============================================================
-# 詳細説明
-# ============================================================
-render_image_generate_help_expander(
-    theme=theme,
-    banner_key=BANNER_KEY,
-)
+subtitle("using image-1")
 
 # ============================================================
 # Sidebar：サイズ選択（ボタン1組）＋操作
 # ============================================================
 with st.sidebar:
-
-    # ------------------------------------------------------------
-    # モデル選択
-    # ------------------------------------------------------------
-    model_key = render_image_model_picker(
-        title="🧠 画像生成モデル",
-        catalog=IMAGE_MODEL_CATALOG,
-        session_key=K_MODEL_KEY,
-        default_key=DEFAULT_MODEL_KEY,
-        page_name=PAGE_NAME,
-        gemini_available=_gemini_available(),
-    )
-
-    provider_image, model_image = _parse_model_key(model_key)
-    st.divider()
-
     # ------------------------------------------------------------
     # サイズ（生成/修正 共通）
     # ------------------------------------------------------------
@@ -333,16 +265,6 @@ if st.button("🎨 生成する", type="primary"):
 
     size_now = str(st.session_state.get(K_SIZE, "1024x1024") or "1024x1024")
 
-    # ------------------------------------------------------------
-    # 選択中の画像モデルを取得
-    # ------------------------------------------------------------
-    model_key = str(st.session_state.get(K_MODEL_KEY) or DEFAULT_MODEL_KEY)
-    provider_image, model_image = _parse_model_key(model_key)
-
-    if not provider_image or not model_image:
-        st.error(f"画像モデル指定が不正です: {model_key}")
-        st.stop()
-
     try:
         with busy_run(
             projects_root=PROJECTS_ROOT,
@@ -350,8 +272,8 @@ if st.button("🎨 生成する", type="primary"):
             app_name=str(APP_NAME),
             page_name=str(PAGE_NAME),
             task_type="image",
-            provider=str(provider_image),
-            model=str(model_image),
+            provider=str(PROVIDER_IMAGE),
+            model=str(MODEL_IMAGE),
             meta={
                 "feature": "image_generate_template",
                 "action": "generate",
@@ -361,10 +283,9 @@ if st.button("🎨 生成する", type="primary"):
             usd_jpy=None,
         ) as br:
             with st.spinner("画像を生成中…"):
-                
                 res = generate_image(
-                    provider=str(provider_image),
-                    model=str(model_image),
+                    provider=str(PROVIDER_IMAGE),
+                    model=str(MODEL_IMAGE),
                     prompt=str(p),
                     size=str(size_now),
                     n=1,
@@ -386,8 +307,8 @@ if st.button("🎨 生成する", type="primary"):
         {
             "user": str(sub),
             "action": "generate",
-            "provider": str(provider_image),
-            "model": str(model_image),
+            "provider": str(PROVIDER_IMAGE),
+            "model": str(MODEL_IMAGE),
             "size": str(size_now),
             "n": 1,
             "prompt_hash": sha256_short(p),
@@ -441,16 +362,6 @@ if st.button("🖌️ 修正版を生成する（この修正内容を反映）"
 
     size_now = str(st.session_state.get(K_SIZE, "1024x1024") or "1024x1024")
 
-    # ------------------------------------------------------------
-    # 選択中の画像モデルを取得
-    # ------------------------------------------------------------
-    model_key = str(st.session_state.get(K_MODEL_KEY) or DEFAULT_MODEL_KEY)
-    provider_image, model_image = _parse_model_key(model_key)
-
-    if not provider_image or not model_image:
-        st.error(f"画像モデル指定が不正です: {model_key}")
-        st.stop()
-
     try:
         with busy_run(
             projects_root=PROJECTS_ROOT,
@@ -458,8 +369,8 @@ if st.button("🖌️ 修正版を生成する（この修正内容を反映）"
             app_name=str(APP_NAME),
             page_name=str(PAGE_NAME),
             task_type="image",
-            provider=str(provider_image),
-            model=str(model_image),
+            provider=str(PROVIDER_IMAGE),
+            model=str(MODEL_IMAGE),
             meta={
                 "feature": "image_generate_template",
                 "action": "edit",
@@ -472,8 +383,8 @@ if st.button("🖌️ 修正版を生成する（この修正内容を反映）"
         ) as br:
             with st.spinner("修正版を生成中…"):
                 res2 = edit_image(
-                    provider=str(provider_image),
-                    model=str(model_image),
+                    provider=str(PROVIDER_IMAGE),
+                    model=str(MODEL_IMAGE),
                     prompt=str(ep),
                     image_bytes=bytes(png_bytes),
                     size=str(size_now),
@@ -495,8 +406,8 @@ if st.button("🖌️ 修正版を生成する（この修正内容を反映）"
         {
             "user": str(sub),
             "action": "edit",
-            "provider": str(provider_image),
-            "model": str(model_image),
+            "provider": str(PROVIDER_IMAGE),
+            "model": str(MODEL_IMAGE),
             "size": str(size_now),
             "prompt_hash": sha256_short(ep),
             **({"prompt": ep} if INCLUDE_FULL_PROMPT_IN_LOG else {}),
@@ -576,16 +487,10 @@ last_run_id = str(st.session_state.get(K_LAST_RUN_ID, "") or "").strip()
 if not last_run_id:
     st.info("まだ実行がありません（生成/修正を実行すると表示されます）。")
 else:
-    current_model_key = str(
-        st.session_state.get(K_MODEL_KEY) or DEFAULT_MODEL_KEY
-    )
-
-    _, current_model = _parse_model_key(current_model_key)
-
     render_run_summary_image_compact(
         projects_root=PROJECTS_ROOT,
         run_id=last_run_id,
-        model=str(current_model),
+        model=str(MODEL_IMAGE),
         cost=None,
         note="",
         show_divider=False,

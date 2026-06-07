@@ -208,45 +208,29 @@ INCLUDE_FULL_PROMPT_IN_LOG = True
 # ============================================================
 # ページ設定
 # ============================================================
-st.set_page_config(
-    page_title="Image Maker / 画像生成",
-    page_icon="🎨",
-    layout="wide",
-)
-
+st.set_page_config(page_title="Image Maker / 画像生成", page_icon="🧪", layout="wide")
+render_banner_line_by_key("pink_soft")
 
 # ============================================================
-# 共通ヘッダー
-# - settings.toml から BANNER_KEY を取得
-# - banner / theme / intro CSS を描画
-# - page_session_heartbeat を実行
-# - title / subtitle / ログイン状態を描画
+# ログイン（heartbeat）
 # ============================================================
-sub, theme, BANNER_KEY, settings = render_standard_page_header(
-    st_module=st,
-    projects_root=PROJECTS_ROOT,
-    app_dir=APP_DIR,
+sub = page_session_heartbeat(
+    st,
+    PROJECTS_ROOT,
     app_name=APP_NAME,
     page_name=PAGE_NAME,
-    title="🎨🖌️ 画像生成",
-    subtitle_text="画像生成モデルをサイドバーで選択可能",
-    default_banner_key="pink_soft",
 )
 
+# ============================================================
+# タイトル + ログイン表示
+# ============================================================
+left, right = st.columns([2, 1])
+with left:
+    st.title("🎨🖌️ 画像生成")
+with right:
+    st.success(f"✅ ログイン中: **{sub}**")
 
-# ============================================================
-# ページ説明
-# ============================================================
-render_image_generate_page_intro()
-
-
-# ============================================================
-# 詳細説明
-# ============================================================
-render_image_generate_help_expander(
-    theme=theme,
-    banner_key=BANNER_KEY,
-)
+subtitle("画像生成モデルをサイドバーで選択可能")
 
 # ============================================================
 # Sidebar：サイズ選択（ボタン1組）＋操作

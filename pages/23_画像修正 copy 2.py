@@ -67,6 +67,13 @@ from PIL import Image
 
 
 # ============================================================
+# 正本：sessions（ログイン＋heartbeat）
+# ============================================================
+from common_lib.sessions.page_entry import page_session_heartbeat
+from common_lib.ui.ui_basics import subtitle
+
+
+# ============================================================
 # 正本：AI routing（画像）
 # ============================================================
 from common_lib.ai.routing import edit_image  # type: ignore
@@ -108,19 +115,12 @@ from common_lib.inbox.inbox_common.types import (
     IngestFailed,
 )
 
-# ============================================================
-# common_lib（共通ヘッダー）
-# ============================================================
-from common_lib.ui.page_header import render_standard_page_header
-
 
 # ============================================================
-# lib（ページ説明UI）
+# UI：バナー（任意）
 # ============================================================
-from lib.explanation.exp_image_edit import (
-    render_image_edit_page_intro,
-    render_image_edit_help_expander,
-)
+from common_lib.ui.banner_lines import render_banner_line_by_key
+
 
 # ============================================================
 # 定数
@@ -362,43 +362,36 @@ def _clear_inbox_selection() -> None:
 # ============================================================
 st.set_page_config(
     page_title="Image Maker / 画像修正",
-    page_icon="✏️",
+    page_icon="🧪",
     layout="wide",
 )
 
+render_banner_line_by_key("pink_soft")
+
 
 # ============================================================
-# 共通ヘッダー
-# - settings.toml から BANNER_KEY を取得
-# - banner / theme / intro CSS を描画
-# - page_session_heartbeat を実行
-# - title / subtitle / ログイン状態を描画
+# ログイン（heartbeat）
 # ============================================================
-sub, theme, BANNER_KEY, settings = render_standard_page_header(
-    st_module=st,
-    projects_root=PROJECTS_ROOT,
-    app_dir=APP_DIR,
+sub = page_session_heartbeat(
+    st,
+    PROJECTS_ROOT,
     app_name=APP_NAME,
     page_name=PAGE_NAME,
-    title="✏️🖼️ 画像修正",
-    subtitle_text="画像修正モデルをサイドバーで選択可能",
-    default_banner_key="pink_soft",
 )
 
 
 # ============================================================
-# ページ説明
+# タイトル + ログイン表示
 # ============================================================
-render_image_edit_page_intro()
+left, right = st.columns([2, 1])
 
+with left:
+    st.title("✏️🖼️ 画像修正")
 
-# ============================================================
-# 詳細説明
-# ============================================================
-render_image_edit_help_expander(
-    theme=theme,
-    banner_key=BANNER_KEY,
-)
+with right:
+    st.success(f"✅ ログイン中: **{sub}**")
+
+subtitle("画像修正モデルをサイドバーで選択可能")
 
 
 # ============================================================

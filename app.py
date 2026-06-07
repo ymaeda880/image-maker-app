@@ -1,60 +1,59 @@
-# app.py（image_maker_app）
-"""
-🎨 image_maker_app（ポータルログイン誘導付き）
-
-目的
-----
-- この app.py は「入口ページ」。
-- 未ログインでも画面は表示する（ブロックしない）。
-- ただし未ログインなら「ポータルでログインして」と警告し、
-  可能ならポータルへのリンク（/ or /portal 等）を案内する。
-
-設計方針
---------
-- 認証判定は common_lib に一本化（Cookie/JWT/session復元）
-- app.py 側は「誰がログイン中か？」を関数で聞くだけ
-- Cookie の set/delete（ログイン/ログアウト）はこのアプリでは行わない
-"""
+# -*- coding: utf-8 -*-
+# image_maker_app/app.py
+# ============================================================
+# Image Maker app entry
+#
+# 機能：
+# - st.navigation によるページ構成
+# - トップページ / 画像生成 / 画像修正 / 利用履歴 / 管理者ログ / ポータル戻り
+# - copy ファイルや区切り用ファイルは navigation から除外
+# ============================================================
 
 from __future__ import annotations
 
 # ============================================================
 # imports
 # ============================================================
-import sys
 from pathlib import Path
+import sys
 
 import streamlit as st
 
 
 # ============================================================
-# sys.path（設計上の確定事項）※ import より先に必ず実行
+# パス設定（app.py 用）
 # ============================================================
 _THIS = Path(__file__).resolve()
-APP_ROOT = _THIS.parent
-APP_NAME = APP_ROOT.name
-PROJECTS_ROOT = _THIS.parents[2]
 
-if str(PROJECTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECTS_ROOT))
+APP_DIR = _THIS.parent
+PROJ_DIR = _THIS.parents[1]
+MONO_ROOT = _THIS.parents[2]
+
+for p in (MONO_ROOT, PROJ_DIR, APP_DIR):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+PROJECTS_ROOT = MONO_ROOT
+APP_NAME = APP_DIR.name
+PAGE_NAME = _THIS.stem
 
 
 # ============================================================
-# common_lib imports
+# navigation icons
 # ============================================================
-from common_lib.sessions.app_entry import app_session_heartbeat
-from common_lib.ui.banner_lines import render_banner_line_by_key
-from common_lib.ui.intro_panel import (
-    render_hero_panel,
-    render_intro_css,
-    render_two_column_cards,
+from common_lib.ui.nav_icons import (
+    NAV_HOME_ICON,
+    NAV_PORTAL_RETURN_ICON,
+    NAV_PROCESS_ICON,
+    NAV_CONSTRUCTION_ICON,
+    NAV_STOP_ICON,
+    PAGE_HOME_ICON,
+    PAGE_PORTAL_RETURN_ICON,
 )
-from common_lib.ui.theme_colors import get_theme_colors_from_banner_key
-from common_lib.ui.ui_basics import subtitle
 
 
 # ============================================================
-# 基本設定
+# page config
 # ============================================================
 st.set_page_config(
     page_title="Image Maker",
@@ -64,121 +63,66 @@ st.set_page_config(
 
 
 # ============================================================
-# theme / banner
+# navigation
 # ============================================================
-BANNER_KEY = "pink_soft"
+pg = st.navigation(
+    {
+        f"{NAV_HOME_ICON}": [
+            st.Page(
+                "pages/00_トップ.py",
+                title="Home",
+                icon=PAGE_HOME_ICON,
+                default=True,
+                url_path="top",
+            ),
+        ],
 
-render_banner_line_by_key(BANNER_KEY)
+        f"{NAV_PROCESS_ICON} 画像処理": [
+            st.Page(
+                "pages/22_画像生成.py",
+                title="画像生成",
+                icon="🎨",
+                url_path="22_画像生成",
+            ),
+            st.Page(
+                "pages/23_画像修正.py",
+                title="画像修正",
+                icon="✏️",
+                url_path="23_画像修正",
+            ),
+        ],
 
-theme = get_theme_colors_from_banner_key(BANNER_KEY)
-render_intro_css(theme)
+        f"{NAV_PROCESS_ICON} 利用履歴": [
+            st.Page(
+                "pages/30_ログ集計.py",
+                title="利用履歴",
+                icon="📊",
+                url_path="30_ログ集計",
+            ),
+        ],
 
+        f"{NAV_PORTAL_RETURN_ICON}": [
+            st.Page(
+                "pages/50_ポータルへ戻る.py",
+                title="ポータルへ戻る",
+                icon=PAGE_PORTAL_RETURN_ICON,
+                url_path="50_ポータルへ戻る",
+            ),
+        ],
 
-# ============================================================
-# session heartbeat
-# ============================================================
-sub = app_session_heartbeat(
-    st,
-    PROJECTS_ROOT,
-    app_name=APP_NAME,
+        f"{NAV_STOP_ICON} 開発・管理": [
+            st.Page(
+                "pages/99_画像ログ集計.py",
+                title="画像ログ集計",
+                icon="📊",
+                url_path="99_画像ログ集計",
+            ),
+        ],
+    }
 )
 
 
 # ============================================================
-# ヘッダ
+# run
 # ============================================================
-left, right = st.columns([2, 1])
-
-with left:
-    st.title("🖼️ Image Maker")
-
-with right:
-    st.success(f"✅ ログイン中: **{sub}**")
-
-subtitle("AI Creative Studio")
-
-
-# ============================================================
-# short description
-# ============================================================
-st.caption("Generate・Edit・Refine・Template — all in one creative workspace.")
-
-st.markdown(
-    """
-    左サイドバーのメニューから、利用したい機能を選択してください。  
-    まずは **画像生成** ページからお試しください。
-    """
-)
-
-
-# # ============================================================
-# # expander
-# # ============================================================
-# with st.expander("使い方", expanded=False):
-#     st.markdown(
-#         """
-# 1. 画像を生成するときは、「サイドバー」の **画像生成** から行ってください。
-# 2. 画像を修正するときは、「サイドバー」の **画像修正** から行ってください。
-# 3. プロンプトのテンプレートは、今後順次整備していく予定です。
-# """
-#     )
-
-# ============================================================
-# intro message
-# ============================================================
-render_hero_panel(
-    kicker="IMAGE MAKER",
-    title="アイデアを、すばやく画像に。画像を、もっと使いやすく。",
-    body_html='<span class="ts-highlight">Image Maker</span> は、画像生成・画像修正・プロンプト活用をまとめて扱うためのAIクリエイティブスタジオです。<br>左サイドバーから目的に応じた機能を選び、まずは <span class="ts-highlight">画像生成</span> ページをお試しください。',
-    chips=[
-        "Generate",
-        "Edit",
-        "Prompt",
-        "Refine",
-    ],
-)
-
-
-# ============================================================
-# info cards
-# ============================================================
-render_two_column_cards(
-    left_title="🚧 現在も開発中です",
-    left_body_html="本アプリケーションは、皆様の業務効率を高めることを目的として、継続的に改良を進めています。<br><br>気づいた点・改善してほしい点・不具合などがありましたら、ぜひフィードバックをお寄せください。",
-    right_title="🎨 画像生成・画像修正に対応します",
-    right_body_html="プロンプトから画像を生成したり、既存画像を目的に合わせて修正したりできます。<br><br>今後は、画像修正用プロンプトのテンプレートも整備していく予定です。",
-)
-
-
-# ============================================================
-# cost / usage cards
-# ============================================================
-#st.divider()
-st.markdown(
-    '<div style="height:24px;"></div>',
-    unsafe_allow_html=True,
-)
-
-render_two_column_cards(
-    left_title="💰 料金の目安",
-    left_body_html="画像生成は、現在の設定では <span class=\"ts-highlight\">1枚あたり約25円</span> を目安としています。<br><br>大量に生成する場合は、枚数と用途を確認しながら利用してください。",
-    right_title="🧭 使い方",
-    right_body_html="画像を生成するときは、左サイドバーの <span class=\"ts-highlight\">画像生成</span> を開いてください。<br><br>画像を修正するときは、左サイドバーの <span class=\"ts-highlight\">画像修正</span> を開いてください。",
-)
-
-
-# ============================================================
-# expander
-# ============================================================
-st.markdown(
-    '<div style="height:16px;"></div>',
-    unsafe_allow_html=True,
-)
-with st.expander("使い方", expanded=False):
-    st.markdown(
-        """
-1. 画像を生成するときは、「サイドバー」の **画像生成** から行ってください。
-2. 画像を修正するときは、「サイドバー」の **画像修正** から行ってください。
-3. プロンプトのテンプレートは、今後順次整備していく予定です。
-"""
-    )
+pg.run()

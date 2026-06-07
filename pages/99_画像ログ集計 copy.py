@@ -1,4 +1,4 @@
-# image_maker_app/pages/99_画像ログ集計.py
+# pages/99_画像ログ集計.py
 # ============================================================
 # 📊 画像生成/修正ログ 集計ビューア（管理者専用）
 # ============================================================
@@ -291,29 +291,10 @@ for col in ["generate", "edit"]:
 user_pivot["total"] = user_pivot["generate"] + user_pivot["edit"]
 user_pivot = user_pivot.sort_values("total", ascending=False)
 
-user_pivot_display = user_pivot.rename(
-    columns={
-        "user": "ユーザー",
-        "generate": "画像生成",
-        "edit": "画像修正",
-        "total": "総数",
-    }
-)
-
-user_pivot_display = user_pivot_display[
-    [
-        "ユーザー",
-        "画像生成",
-        "画像修正",
-        "総数",
-    ]
-]
-
-st.dataframe(user_pivot_display, width="stretch")
-
+st.dataframe(user_pivot, width="stretch")
 st.download_button(
     "⬇️ ユーザー別集計 CSV",
-    data=user_pivot_display.to_csv(index=False).encode("utf-8-sig"),
+    data=user_pivot.to_csv(index=False).encode("utf-8-sig"),
     file_name="user_summary.csv",
     mime="text/csv",
 )
@@ -339,116 +320,34 @@ for col in ["generate", "edit"]:
 monthly["total"] = monthly["generate"] + monthly["edit"]
 monthly = monthly.sort_values("month")
 
-monthly_display = monthly.rename(
-    columns={
-        "month": "月",
-        "generate": "画像生成",
-        "edit": "画像修正",
-        "total": "総数",
-    }
-)
-
-monthly_display = monthly_display[
-    [
-        "月",
-        "画像生成",
-        "画像修正",
-        "総数",
-    ]
-]
-
-st.dataframe(monthly_display, width="stretch")
+st.dataframe(monthly, width="stretch")
+st.bar_chart(monthly.set_index("month")[["generate", "edit"]])
 
 st.download_button(
     "⬇️ 月別集計 CSV",
-    data=monthly_display.to_csv(index=False).encode("utf-8-sig"),
+    data=monthly.to_csv(index=False).encode("utf-8-sig"),
     file_name="monthly_summary.csv",
     mime="text/csv",
 )
 
 
+
 # ============================================================
-# 月別・モデル別 集計
-# ============================================================
-st.divider()
-st.subheader("🧠 月別・モデル別 集計")
-
-for col in ["provider", "model"]:
-    if col not in fdf.columns:
-        fdf[col] = ""
-
-model_df = fdf[fdf["action"].isin(["generate", "edit"])].copy()
-
-if model_df.empty:
-    st.info("月別・モデル別に集計できるログがありません。")
-else:
-    model_df["provider"] = model_df["provider"].fillna("").astype(str)
-    model_df["model"] = model_df["model"].fillna("").astype(str)
-
-    model_df["model_label"] = model_df.apply(
-        lambda r: f"{r['provider']} / {r['model']}".strip(" /"),
-        axis=1,
-    )
-
-    monthly_model = (
-        model_df
-        .groupby(["month", "model_label", "action"])["ts"]
-        .count()
-        .unstack(fill_value=0)
-        .reset_index()
-    )
-
-    for col in ["generate", "edit"]:
-        if col not in monthly_model.columns:
-            monthly_model[col] = 0
-
-    monthly_model["total"] = monthly_model["generate"] + monthly_model["edit"]
-    monthly_model = monthly_model.sort_values(["month", "model_label"])
-
-    monthly_model_display = monthly_model.rename(
-        columns={
-            "month": "月",
-            "model_label": "モデル",
-            "generate": "画像生成",
-            "edit": "画像修正",
-            "total": "総数",
-        }
-    )
-
-    monthly_model_display = monthly_model_display[
-        [
-            "月",
-            "モデル",
-            "画像生成",
-            "画像修正",
-            "総数",
-        ]
-    ]
-
-    st.dataframe(monthly_model_display, width="stretch")
-
-    st.download_button(
-        "⬇️ 月別・モデル別集計 CSV",
-        data=monthly_model_display.to_csv(index=False).encode("utf-8-sig"),
-        file_name="monthly_model_summary.csv",
-        mime="text/csv",
-    )
-
-#
-# ============================================================
-# ユーザー × 月別 集計（合計 / 画像生成 / 画像修正）
+# ユーザー × 月別 集計（合計 / generate / edit）
 # ============================================================
 st.divider()
 st.subheader("👥🗓️ ユーザー × 月別 集計")
 
+# 対象データ（generate / edit のみ）
 df_um = fdf[fdf["action"].isin(["generate", "edit"])].copy()
-
 if df_um.empty:
     st.info("対象期間・ユーザーに該当するログがありません。")
 else:
+    # 月の並び順を固定（欠損月も0で埋められるように）
     months = sorted(df_um["month"].dropna().unique().tolist())
     df_um["month"] = pd.Categorical(df_um["month"], categories=months, ordered=True)
 
+    # 合計（generate + edit）
     pivot_total = (
         df_um
         .groupby(["user", "month"], observed=False)
@@ -458,6 +357,7 @@ else:
         .sort_index()
     )
 
+    # 個別アクション
     def pivot_for(action: str) -> pd.DataFrame:
         _tmp = (
             df_um[df_um["action"] == action]
@@ -467,19 +367,16 @@ else:
             .reindex(columns=months, fill_value=0)
             .sort_index()
         )
+        # 全ユーザー・全月に0で揃える
         return _tmp.reindex(index=sorted(df_um["user"].unique()), fill_value=0)
 
-    pivot_gen = pivot_for("generate")
+    pivot_gen  = pivot_for("generate")
     pivot_edit = pivot_for("edit")
 
-    pivot_total.index.name = "ユーザー"
-    pivot_gen.index.name = "ユーザー"
-    pivot_edit.index.name = "ユーザー"
-
-    tab_total, tab_gen, tab_edit = st.tabs(["合計", "画像生成", "画像修正"])
+    tab_total, tab_gen, tab_edit, tab_chart = st.tabs(["合計", "generate", "edit", "チャート"])
 
     with tab_total:
-        st.caption("ユーザー × 月：画像生成と画像修正の合計件数")
+        st.caption("ユーザー × 月 列：月 / 値：件数（generate + edit）")
         st.dataframe(pivot_total, width="stretch")
         st.download_button(
             "⬇️ 合計（ユーザー×月）CSV",
@@ -489,98 +386,47 @@ else:
         )
 
     with tab_gen:
-        st.caption("ユーザー × 月：画像生成の件数")
+        st.caption("ユーザー × 月 列：月 / 値：件数（generate）")
         st.dataframe(pivot_gen, width="stretch")
         st.download_button(
-            "⬇️ 画像生成（ユーザー×月）CSV",
+            "⬇️ generate（ユーザー×月）CSV",
             data=pivot_gen.to_csv(index=True).encode("utf-8-sig"),
             file_name="user_by_month_generate.csv",
             mime="text/csv",
         )
 
     with tab_edit:
-        st.caption("ユーザー × 月：画像修正の件数")
+        st.caption("ユーザー × 月 列：月 / 値：件数（edit）")
         st.dataframe(pivot_edit, width="stretch")
         st.download_button(
-            "⬇️ 画像修正（ユーザー×月）CSV",
+            "⬇️ edit（ユーザー×月）CSV",
             data=pivot_edit.to_csv(index=True).encode("utf-8-sig"),
             file_name="user_by_month_edit.csv",
             mime="text/csv",
         )
-        
-# ============================================================
-# ユーザー × 月別 × モデル別 集計
-# ============================================================
-st.divider()
-st.subheader("👥🗓️🧠 ユーザー × 月別 × モデル別 集計")
 
-for col in ["provider", "model"]:
-    if col not in fdf.columns:
-        fdf[col] = ""
+    with tab_chart:
+        st.caption("ユーザーを選ぶと月次推移を表示（合計 / 内訳を切替可）")
+        chart_kind = st.radio("系列", ["合計", "generate", "edit"], horizontal=True)
+        pick_users = st.multiselect(
+            "ユーザーを選択（複数可）",
+            options=sorted(pivot_total.index.tolist()),
+            default=sorted(pivot_total.index.tolist())[:5],
+        )
 
-df_umm = fdf[fdf["action"].isin(["generate", "edit"])].copy()
+        if chart_kind == "合計":
+            df_plot = pivot_total
+        elif chart_kind == "generate":
+            df_plot = pivot_gen
+        else:
+            df_plot = pivot_edit
 
-if df_umm.empty:
-    st.info("ユーザー・月別・モデル別に集計できるログがありません。")
-else:
-    df_umm["provider"] = df_umm["provider"].fillna("").astype(str)
-    df_umm["model"] = df_umm["model"].fillna("").astype(str)
-
-    df_umm["モデル"] = df_umm.apply(
-        lambda r: f"{r['provider']} / {r['model']}".strip(" /"),
-        axis=1,
-    )
-
-    user_month_model = (
-        df_umm
-        .groupby(["user", "month", "モデル", "action"])["ts"]
-        .count()
-        .unstack(fill_value=0)
-        .reset_index()
-    )
-
-    for col in ["generate", "edit"]:
-        if col not in user_month_model.columns:
-            user_month_model[col] = 0
-
-    user_month_model["total"] = (
-        user_month_model["generate"] + user_month_model["edit"]
-    )
-
-    user_month_model = user_month_model.sort_values(
-        ["user", "month", "モデル"]
-    )
-
-    user_month_model_display = user_month_model.rename(
-        columns={
-            "user": "ユーザー",
-            "month": "月",
-            "generate": "画像生成",
-            "edit": "画像修正",
-            "total": "総数",
-        }
-    )
-
-    user_month_model_display = user_month_model_display[
-        [
-            "ユーザー",
-            "月",
-            "モデル",
-            "画像生成",
-            "画像修正",
-            "総数",
-        ]
-    ]
-
-    st.dataframe(user_month_model_display, width="stretch")
-
-    st.download_button(
-        "⬇️ ユーザー×月別×モデル別集計 CSV",
-        data=user_month_model_display.to_csv(index=False).encode("utf-8-sig"),
-        file_name="user_month_model_summary.csv",
-        mime="text/csv",
-    )
-
+        df_plot = df_plot.loc[df_plot.index.intersection(pick_users)]
+        if df_plot.empty:
+            st.info("表示対象のユーザーが選択されていません。")
+        else:
+            # 月をインデックスに転置して可視化（縦：月、横：ユーザーの複数系列）
+            st.bar_chart(df_plot.T)
 
 # ============================================================
 # 🧹 年月でログ削除（monthly ファイルを物理削除）

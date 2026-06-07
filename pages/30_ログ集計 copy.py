@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# image_maker_app/pages/30_ログ集計.py
+# pages/30_ログ集計.py
 # ============================================================
 # 📊 ログ集計（ログインユーザー専用 / このアプリのみ）
 # ============================================================
@@ -29,76 +29,48 @@ def _add_commonlib_parent_to_syspath():
 
 _add_commonlib_parent_to_syspath()
 
+from common_lib.auth.auth_helpers import require_login  # noqa: E402
 from common_lib.logs.paths import get_log_layout, month_to_file_map  # noqa: E402
 from common_lib.logs.jsonl_reader import read_jsonl_files  # noqa: E402
 from common_lib.logs.normalize import normalize_log_df  # noqa: E402
-
-from common_lib.ui.page_header import render_standard_page_header  # noqa: E402
-
-from lib.explanation.exp_image_usage import (  # noqa: E402
-    render_image_usage_page_intro,
-    render_image_usage_help_expander,
-)
-
-# ============================================================
-# 基本設定
-# ============================================================
-HERE = Path(__file__).resolve()
-APP_DIR = HERE.parents[1]
-APP_NAME = APP_DIR.name
-PAGE_NAME = HERE.stem
-
-MONO_ROOT = HERE.parents[3]
-PROJECTS_ROOT = MONO_ROOT
-
+from common_lib.ui.banner_lines import render_banner_line_by_key
 
 # ============================================================
 # ページ設定
 # ============================================================
 st.set_page_config(
-    page_title="Image Maker / 利用履歴",
+    page_title="Image Maker / ログ集計",
     page_icon="📊",
     layout="wide",
 )
-
-
-# ============================================================
-# 共通ヘッダー
-# - settings.toml から BANNER_KEY を取得
-# - banner / theme / intro CSS を描画
-# - page_session_heartbeat を実行
-# - title / subtitle / ログイン状態を描画
-# ============================================================
-sub, theme, BANNER_KEY, settings = render_standard_page_header(
-    st_module=st,
-    projects_root=PROJECTS_ROOT,
-    app_dir=APP_DIR,
-    app_name=APP_NAME,
-    page_name=PAGE_NAME,
-    title="📊 利用履歴",
-    subtitle_text="画像生成・画像修正の利用状況を確認",
-    default_banner_key="pink_soft",
-)
-
+render_banner_line_by_key("pink_soft")
 
 # ============================================================
-# ページ説明
+# ログイン必須（★ 管理者ではない ★）
 # ============================================================
-render_image_usage_page_intro()
 
-
-# ============================================================
-# 詳細説明
-# ============================================================
-render_image_usage_help_expander(
-    theme=theme,
-    banner_key=BANNER_KEY,
-)
+sub = require_login(st)
+if not sub:
+    st.stop()
+left, right = st.columns([2, 1])
+with left:
+    st.title("📊 利用履歴")
+with right:
+    st.success(f"✅ ログイン中: **{sub}**")
 
 
 # ============================================================
 # 基本設定（このアプリのログのみ）
 # ============================================================
+# st.title("📊 ログ集計（利用履歴）")
+
+HERE = Path(__file__).resolve()
+APP_DIR = HERE.parents[1]
+APP_NAME = APP_DIR.name
+
+MONO_ROOT = HERE.parents[3]
+PROJECTS_ROOT = MONO_ROOT
+
 # ✅ common_lib 側の正本で log_dir を決定
 _layout = get_log_layout(PROJECTS_ROOT, APP_NAME)
 LOG_DIR = _layout.log_dir
@@ -229,14 +201,15 @@ total_cnt = len(fdf)
 
 m1, m2, m3 = st.columns(3)
 m1.metric("作成（generate）", f"{gen_cnt:,}")
-m2.metric("修正（edit）", f"{edit_cnt:,}")
+m2.metric("改修（edit）", f"{edit_cnt:,}")
 m3.metric("合計", f"{total_cnt:,}")
+
 
 # ============================================================
 # 月別集計
 # ============================================================
 st.divider()
-st.subheader("🗓️ 月別 画像生成枚数")
+st.subheader("🗓️ 月別 集計")
 
 if "month" not in fdf.columns:
     st.warning("ログに month 列が見つからないため、月別集計ができません。")
@@ -257,100 +230,15 @@ for col in ["generate", "edit"]:
 monthly["total"] = monthly["generate"] + monthly["edit"]
 monthly = monthly.sort_values("month")
 
-monthly_display = monthly.rename(
-    columns={
-        "month": "月",
-        "generate": "画像生成",
-        "edit": "画像修正",
-        "total": "総数",
-    }
-)
-
-monthly_display = monthly_display[
-    [
-        "月",
-        "画像生成",
-        "画像修正",
-        "総数",
-    ]
-]
-
-st.dataframe(monthly_display, width="stretch")
+st.dataframe(monthly, width="stretch")
+st.bar_chart(monthly.set_index("month")[["generate", "edit"]])
 
 st.download_button(
     "⬇️ 月別集計 CSV",
-    data=monthly_display.to_csv(index=False).encode("utf-8-sig"),
+    data=monthly.to_csv(index=False).encode("utf-8-sig"),
     file_name="my_monthly_summary.csv",
     mime="text/csv",
 )
-
-
-# ============================================================
-# 月別・モデル別集計
-# ============================================================
-st.divider()
-st.subheader("🧠 月別・モデル別 画像生成枚数")
-
-for col in ["provider", "model"]:
-    if col not in fdf.columns:
-        fdf[col] = ""
-
-model_df = fdf[fdf["action"].isin(["generate", "edit"])].copy()
-
-if model_df.empty:
-    st.info("月別・モデル別に集計できるログがありません。")
-else:
-    model_df["provider"] = model_df["provider"].fillna("").astype(str)
-    model_df["model"] = model_df["model"].fillna("").astype(str)
-
-    model_df["model_label"] = model_df.apply(
-        lambda r: f"{r['provider']} / {r['model']}".strip(" /"),
-        axis=1,
-    )
-
-    monthly_model = (
-        model_df
-        .groupby(["month", "model_label", "action"])["ts"]
-        .count()
-        .unstack(fill_value=0)
-        .reset_index()
-    )
-
-    for col in ["generate", "edit"]:
-        if col not in monthly_model.columns:
-            monthly_model[col] = 0
-
-    monthly_model["total"] = monthly_model["generate"] + monthly_model["edit"]
-    monthly_model = monthly_model.sort_values(["month", "model_label"])
-
-    monthly_model_display = monthly_model.rename(
-        columns={
-            "month": "月",
-            "model_label": "モデル",
-            "generate": "画像生成",
-            "edit": "画像修正",
-            "total": "総数",
-        }
-    )
-
-    monthly_model_display = monthly_model_display[
-        [
-            "月",
-            "モデル",
-            "画像生成",
-            "画像修正",
-            "総数",
-        ]
-    ]
-
-    st.dataframe(monthly_model_display, width="stretch")
-
-    st.download_button(
-        "⬇️ 月別・モデル別集計 CSV",
-        data=monthly_model.to_csv(index=False).encode("utf-8-sig"),
-        file_name="my_monthly_model_summary.csv",
-        mime="text/csv",
-    )
 
 # ============================================================
 # 終了

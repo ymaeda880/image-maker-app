@@ -1,0 +1,4 @@
+# .streamlit/settings.toml
+
+BANNER_KEY = "pink_soft"
+
