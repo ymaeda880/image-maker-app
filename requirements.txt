@@ -9,3 +9,5 @@ extra-streamlit-components>=0.1.71
 
 PyJWT>=2.8.0
 cryptography>=42.0.0   # ← RS256/ES256 を使うなら
+
+werkzeug

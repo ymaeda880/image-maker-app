@@ -118,6 +118,16 @@ pg = st.navigation(
                 url_path="99_画像ログ集計",
             ),
         ],
+
+        f"{NAV_STOP_ICON} 開発・管理": [
+            st.Page(
+                "pages/999_開発用管理者ログイン.py",
+                title="開発用 管理者ログイン",
+                icon="🔐",
+                url_path="999_開発用管理者ログイン",
+            ),
+        ],  
+        
     }
 )
 
