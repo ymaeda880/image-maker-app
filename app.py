@@ -94,10 +94,10 @@ pg = st.navigation(
 
         f"{NAV_PROCESS_ICON} 利用履歴": [
             st.Page(
-                "pages/30_ログ集計.py",
+                "pages/30_利用履歴.py",
                 title="利用履歴",
                 icon="📊",
-                url_path="30_ログ集計",
+                url_path="30_利用履歴",
             ),
         ],
 
